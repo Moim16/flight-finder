@@ -150,6 +150,27 @@ await test("tipo de vuelo", () => {
   assert.equal(kindOf({ flight: "ABC123", cat: "A1" }), "private"); // avioneta con indicativo
   assert.equal(kindOf({ flight: "RCH553", military: true }), "mil");
   assert.equal(kindOf({ flight: "LAN800", cat: "A7" }), "heli");
+  // Sin el bit de la base (llego solo por OpenSky): el modelo o el indicativo
+  assert.equal(kindOf({ flight: "RCH553" }), "mil");
+  assert.equal(kindOf({ flight: "FORTE11" }), "mil");
+  assert.equal(kindOf({ flight: "XYZ1", type: "K35R" }), "mil");
+  assert.equal(kindOf({ flight: "LAN800", type: "C130" }), "airline");   // hay Hercules civiles
+  assert.notEqual(kindOf({ flight: "SAMOA1" }), "mil");                  // SAM + letras no es SAM
+});
+
+await test("ficha militar", async () => {
+  const { militaryInfo } = await import("../lib/military.js");
+  const c17 = militaryInfo("C17", "RCH553");
+  assert.equal(c17.name, "C-17 Globemaster III");
+  assert.equal(c17.roleLabel, "Transporte");
+  assert.match(c17.callsignOperator, /Movilidad Aérea/);
+  assert.equal(militaryInfo("E3CF").name, "E-3 Sentry (AWACS)");
+  assert.equal(militaryInfo("A320", "LAN800"), null);
+  assert.ok(militaryInfo(null, "NATO01").callsignOperator);
+  // Doble uso: un Gulfstream privado no muestra ficha militar; uno marcado, si
+  assert.equal(militaryInfo("GLF5", "N123AB"), null);
+  assert.equal(militaryInfo("GLF5", "VM510", { isMilitary: true }).roleLabel, "Enlace y transporte de autoridades");
+  assert.equal(kindOf({ flight: "N123AB", type: "GLF5" }), "private");
 });
 
 /* --------------------------------------------------------------- rutas */

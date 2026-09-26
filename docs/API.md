@@ -51,7 +51,7 @@ Si una fuente responde 429 (demasiadas consultas), descansa un minuto y se sigue
 | `desc` | string \| null | modelo legible (`BOEING 787-9 Dreamliner`) |
 | `owner` | string \| null | operador |
 | `cat` | string \| null | categoría ADS-B: `A1` avioneta … `A5` pesado, `A7` helicóptero, `B*` planeador/globo/dron |
-| `kind` | string | `airline` · `cargo` · `private` · `mil` · `heli`. Lo decide el servidor (`lib/kinds.js`); **los clientes no lo recalculan** |
+| `kind` | string | `airline` · `cargo` · `private` · `mil` · `heli`. Lo decide el servidor (`lib/kinds.js`); **los clientes no lo recalculan**. "Militar" sale del bit de la base de adsb.lol/adsb.fi o, si el avión llegó solo por OpenSky, de su modelo o indicativo (`lib/military.js`) |
 | `lat`, `lon` | number | última posición reportada |
 | `alt` | number \| null | altitud barométrica (0 si está en tierra) |
 | `geomAlt` | number \| null | altitud GPS |
@@ -65,11 +65,13 @@ Si una fuente responde 429 (demasiadas consultas), descansa un minuto y se sigue
 | `seen` | number | segundos desde la última posición |
 | `src` | string[] | fuentes que lo vieron |
 
+**Los clientes recuerdan lo descriptivo por avión** (matrícula, modelo, marca militar) y conservan hasta 45 s un avión que falta en una respuesta pero sigue en la vista: no todas las fuentes traen esos datos ni responden todos los ciclos, y sin esto los contadores saltan.
+
 Caché: `s-maxage=4`. Conviene pedir cada 5 s, con un margen de ~4 % alrededor de la vista para que los aviones no aparezcan de golpe en el borde.
 
 ---
 
-## `GET /api/details?hex=&callsign=` — quién es y a dónde va
+## `GET /api/details?hex=&callsign=&type=&mil=` — quién es y a dónde va
 
 ```json
 {
@@ -85,7 +87,19 @@ Caché: `s-maxage=4`. Conviene pedir cada 5 s, con un margen de ~4 % alrededor d
 }
 ```
 
-Cualquiera de los tres puede venir en `null`. Caché: 1 h.
+Cualquiera puede venir en `null`. Caché: 1 h.
+
+`military` (de `lib/military.js`) es la ficha del modelo militar y/o quién vuela con ese indicativo:
+
+```json
+{ "name": "C-17 Globemaster III", "maker": "Boeing", "role": "transport", "roleLabel": "Transporte",
+  "firstFlight": 1991, "crew": "3", "description": "Transporte estratégico: ...",
+  "specs": [["Carga máxima", "≈ 77 t"], ["Velocidad de crucero", "≈ 830 km/h"]],
+  "operators": "EE. UU., Reino Unido, ...",
+  "callsignOperator": "REACH · Mando de Movilidad Aérea de la Fuerza Aérea de EE. UU. (transporte y cisternas)" }
+```
+
+Hay que mandar `type` (el modelo que transmite el avión) y `mil=1` si viene marcado como militar: los modelos de doble uso (Gulfstream, King Air, C-130...) solo devuelven ficha si el avión es militar. Datos públicos y aproximados.
 
 - **La foto exige atribución**: mostrar el fotógrafo y enlazar a planespotters.net (sus términos).
 - **La ruta hay que validarla contra la posición.** Sale del número de vuelo, y los vuelos con escalas o de ida y vuelta comparten número. La regla (en `routeMatches` de `lib/geo.js` y `checkedRoute` de `index.html`):

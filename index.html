@@ -234,6 +234,16 @@ button { cursor:pointer; }
 .route.warn { background:transparent; border-style:dashed; color:var(--muted); font-size:13.5px; }
 .route.warn b { color:var(--ink); }
 
+.mil-card { margin:0 16px; padding:14px; border-radius:12px; border:1px solid var(--line); background:var(--raised); display:grid; gap:12px; }
+.mil-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.mil-name { font:700 22px/1.1 var(--cond); letter-spacing:.02em; }
+.mil-maker { color:var(--muted); font-size:13px; margin-top:2px; }
+.mil-desc { margin:0; font-size:14px; line-height:1.5; }
+.mil-specs { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+.mil-specs .l, .mil-row .l { font-size:12px; color:var(--muted); }
+.mil-specs .v { font:500 15px/1.3 var(--mono); margin-top:2px; }
+.mil-row { display:grid; grid-template-columns:84px 1fr; gap:10px; font-size:13.5px; line-height:1.45; }
+.mil-note { margin:0; font-size:11.5px; color:var(--faint); }
 .section-title { margin:18px 20px 8px; font:600 11.5px/1 var(--font); letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
 .grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; margin:0 16px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 .cell { background:var(--solid); padding:11px 12px; min-width:0; }
@@ -466,6 +476,7 @@ const POLL_MS = 5000;           // cada cuanto se piden posiciones nuevas
 const TICK_MS = 250;            // cada cuanto se redibujan (entre medio se estiman)
 const MAX_EXTRAPOLATE_S = 60;   // mas alla de esto, no se inventa movimiento
 const STALE_S = 30;             // un avion sin señal por mas de esto se ve apagado
+const GRACE_S = 45;             // si falta en una respuesta, se conserva hasta esto
 const LOST_S = 90;              // el seleccionado se da por perdido
 const KM_PER_NM = 1.852;
 const TRAIL_MAX = 240;
@@ -527,6 +538,7 @@ const HEAVY_TYPES = /^(A3[3-5]\d|A38\d|B74\d|B76\d|B77\w|B78\w|IL96|A124|A225|MD
 const state = {
   planes: new Map(),        // hex -> avion (con recv y fixT para estimar)
   trails: new Map(),        // hex -> [{lat, lon, alt, t}] juntados en esta visita
+  known: new Map(),         // hex -> datos del avion que ya se supieron (ver ingest)
   history: new Map(),       // hex -> { at, points:[{t, lat, lon, alt, ground, gap}] } | "loading"
   pendingTries: 0,
   selected: null,
@@ -929,12 +941,30 @@ async function refresh() {
   }
 }
 
+// Lo que describe al avion (no su posicion) no cambia durante el vuelo, pero
+// no todas las fuentes lo traen: OpenSky no manda matricula, modelo ni la
+// marca de militar. Si un ciclo el avion llega solo por OpenSky, se completa
+// con lo que ya se sabia. Sin esto, el chip "Militares" saltaba de 3 a 1 y
+// volvia a 3 segun que fuente alcanzo a responder.
+const STICKY = ["reg", "type", "desc", "owner", "cat"];
+function remember(a) {
+  const k = state.known.get(a.hex) || {};
+  for (const f of STICKY) {
+    if (a[f] == null && k[f] != null) a[f] = k[f];
+    else if (a[f] != null) k[f] = a[f];
+  }
+  if (a.military || a.kind === "mil") k.mil = true;
+  if (k.mil) { a.military = true; if (a.kind !== "heli") a.kind = "mil"; }
+  state.known.set(a.hex, k);
+  return a;
+}
+
 function ingest(data) {
   const now = Date.now();
   const next = new Map();
   for (const a of data.aircraft) {
     const fixT = now - (a.seen || 0) * 1000;
-    const plane = { ...a, recv: now, fixT };
+    const plane = remember({ ...a, recv: now, fixT });
     next.set(a.hex, plane);
     const trail = state.trails.get(a.hex) || [];
     const last = trail[trail.length - 1];
@@ -944,6 +974,15 @@ function ingest(data) {
       state.trails.set(a.hex, trail);
     }
   }
+  // Un avion que falta en ESTA respuesta, pero se vio hace poco y sigue en la
+  // vista, se conserva (se ira atenuando): casi siempre es que la unica
+  // fuente que lo veia no alcanzo a responder este ciclo, no que se fue.
+  const view = map.getBounds();
+  for (const a of state.planes.values()) {
+    if (next.has(a.hex)) continue;
+    const [lat, lon] = livePos(a, now);
+    if ((now - a.fixT) / 1000 < GRACE_S && view.contains([lon, lat])) next.set(a.hex, a);
+  }
   // El seleccionado se conserva aunque haya salido de la zona: se sigue
   // viendo su ultima posicion (apagada) hasta que se cierre.
   const sel = state.selected && state.planes.get(state.selected);
@@ -951,6 +990,7 @@ function ingest(data) {
   state.planes = next;
 
   for (const hex of state.trails.keys()) if (!next.has(hex)) state.trails.delete(hex);
+  for (const hex of state.known.keys()) if (!next.has(hex)) state.known.delete(hex);
 
   state.lastOk = now;
   state.lastResp = data;
@@ -1161,6 +1201,8 @@ async function loadDetails(a) {
   try {
     const q = new URLSearchParams({ hex: a.hex });
     if (callsignOf(a)) q.set("callsign", callsignOf(a));
+    if (a.type) q.set("type", a.type);
+    if (kindOf(a) === "mil") q.set("mil", "1");
     const r = await fetch(`/api/details?${q}`);
     state.details.set(key, r.ok ? await r.json() : { aircraft: null, route: null, photo: null });
   } catch {
@@ -1290,6 +1332,7 @@ function renderPanel() {
         <div class="hero" data-sec="hero"></div>
         <div data-sec="route"></div>
         <div data-sec="photo"></div>
+        <div data-sec="mil"></div>
         <div class="section-title">Vuelo ahora</div>
         <div class="grid">
           <div class="cell"><div class="l">Altitud</div><div class="v" data-live="alt"></div></div>
@@ -1317,6 +1360,7 @@ function renderPanel() {
     <div class="badges">${badges.join("")}</div>`);
   sec("route", routeHtml);
   sec("photo", photoHtml);
+  sec("mil", militaryHtml(info?.military));
   sec("profile", path.length >= 3
     ? `<div class="section-title">Perfil de altitud</div><div class="profile" data-live="profile"></div>`
     : traceLoading ? `<div class="section-title">Perfil de altitud</div><div class="profile"><div class="axis">Cargando el recorrido…</div></div>` : "");
@@ -1340,6 +1384,27 @@ function renderPanel() {
   if (panel.hidden) panel.hidden = false;
   $("btnList").setAttribute("aria-pressed", "false");
   updateLiveCells(a);
+}
+
+// Ficha del modelo militar (que es, para que se usa, datos y quien lo opera)
+// y/o quien vuela con ese indicativo. Viene de lib/military.js del servidor.
+function militaryHtml(m) {
+  if (!m) return "";
+  const specs = [
+    m.firstFlight ? ["Primer vuelo", String(m.firstFlight)] : null,
+    m.crew ? ["Tripulación", m.crew] : null,
+    ...(m.specs || []),
+  ].filter(Boolean);
+  return `
+    <div class="section-title">Aeronave militar</div>
+    <div class="mil-card">
+      ${m.name ? `<div class="mil-head"><div><div class="mil-name">${esc(m.name)}</div><div class="mil-maker">${esc(m.maker || "")}</div></div>${m.roleLabel ? `<span class="badge mil">${esc(m.roleLabel)}</span>` : ""}</div>` : ""}
+      ${m.description ? `<p class="mil-desc">${esc(m.description)}</p>` : ""}
+      ${specs.length ? `<div class="mil-specs">${specs.map(([l, v]) => `<div><div class="l">${esc(l)}</div><div class="v num">${esc(v)}</div></div>`).join("")}</div>` : ""}
+      ${m.operators ? `<div class="mil-row"><span class="l">Lo operan</span><span>${esc(m.operators)}</span></div>` : ""}
+      ${m.callsignOperator ? `<div class="mil-row"><span class="l">Indicativo</span><span>${esc(m.callsignOperator)}</span></div>` : ""}
+      <p class="mil-note">Datos públicos y aproximados.</p>
+    </div>`;
 }
 
 function compassSvg(track) {
@@ -1677,7 +1742,10 @@ function chooseSuggest(i) {
   }
   const p = it.p;
   q.value = p.name;
-  if (p.bbox && !p.airport) {
+  if (p.kind === "Zona") {
+    // Un estrecho o un mar se muestra entero, sea del tamaño que sea.
+    map.fitBounds([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { padding: 40, essential: true, duration: 1600 });
+  } else if (p.bbox && !p.airport) {
     map.fitBounds([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { padding: 60, maxZoom: 10, minZoom: 6, essential: true, duration: 1600 });
   } else {
     map.flyTo({ center: [p.lon, p.lat], zoom: p.airport ? 10 : 8.5, essential: true, duration: 1600 });

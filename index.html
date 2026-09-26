@@ -680,7 +680,15 @@ function saveFilters() { try { localStorage.setItem("rv_filters", JSON.stringify
 // Posicion estimada AHORA: la ultima posicion reportada, avanzada a su
 // velocidad y rumbo por el tiempo transcurrido (navegacion por estima). Asi
 // los aviones se mueven fluidos entre respuestas en vez de saltar cada 5 s.
+// Con muchos aviones en pantalla (una vista de continente) no se estima el
+// movimiento entre respuestas: a esa distancia no se ve, y recalcular y
+// redibujar cientos de posiciones 4 veces por segundo trababa la pagina.
+// Se reposicionan cuando llegan datos nuevos (cada 5 s).
+const SMOOTH_MAX = 700;
+const smooth = () => state.planes.size <= SMOOTH_MAX;
+
 function livePos(a, now) {
+  if (!smooth()) return [a.lat, a.lon];
   const dt = Math.min(MAX_EXTRAPOLATE_S, (now - a.fixT) / 1000);
   if (!a.gs || a.track == null || dt <= 0 || (a.ground && a.gs < 3)) return [a.lat, a.lon];
   return destination(a.lat, a.lon, a.track, (a.gs * KM_PER_NM * dt) / 3600);
@@ -855,7 +863,7 @@ function setupLayers() {
     paint: { "text-color": endColor, "text-halo-color": halo, "text-halo-width": 2 } });
 
   renderPlanes();
-  renderSelectionOverlays();
+  renderSelectionOverlays(true);
 }
 
 function initMap() {
@@ -928,13 +936,13 @@ let moveTimer = null;
 // El area que se pide es EL RECTANGULO VISIBLE (con un margen chico para que
 // no aparezcan aviones de golpe en el borde al moverse). El servidor lo
 // reparte entre las fuentes; ver lib/area.js.
-function viewBbox() {
+function viewBox() {
   const b = map.getBounds();
   const padLon = (b.getEast() - b.getWest()) * 0.04;
   const padLat = (b.getNorth() - b.getSouth()) * 0.04;
-  return [b.getWest() - padLon, Math.max(-85, b.getSouth() - padLat), b.getEast() + padLon, Math.min(85, b.getNorth() + padLat)]
-    .map((x) => x.toFixed(2)).join(",");
+  return [b.getWest() - padLon, Math.max(-85, b.getSouth() - padLat), b.getEast() + padLon, Math.min(85, b.getNorth() + padLat)];
 }
+const viewBbox = () => viewBox().map((x) => x.toFixed(2)).join(",");
 
 async function refresh() {
   clearTimeout(pollTimer);
@@ -943,6 +951,8 @@ async function refresh() {
   const ctrl = new AbortController();
   inflight = ctrl;
   try {
+    state.lastAskedCenter = map.getCenter();
+    state.askedBox = viewBox();
     const res = await fetch(`/api/flights?bbox=${viewBbox()}`, { signal: ctrl.signal });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const data = await res.json();
@@ -1058,10 +1068,37 @@ function visiblePlanes() {
   return out;
 }
 
+// ¿La vista actual cabe en el rectangulo de la ultima respuesta? El servidor
+// lo redondea hacia afuera a medio grado, asi que un paneo chico o seguir un
+// avion caben: no hace falta otra consulta (la de cada 5 s la actualiza).
+// Si la respuesta fue parcial (vista de continente) si se consulta, para que
+// adsb.lol y adsb.fi cubran el nuevo centro.
+function viewCoveredByLast() {
+  const r = state.lastResp || { bbox: { s: 90, n: -90, w: 180, e: -180 }, partial: true };
+  const at = state.lastAskedCenter;
+  if (!at) return false;
+  const b = map.getBounds();
+  let w = b.getWest(), e = b.getEast();
+  const shift = ((((w + 180) % 360) + 360) % 360) - 180 - w;
+  w += shift; e += shift;
+  // Cabe en lo que respondio el servidor... o en lo que ya se pidio y viene
+  // en camino (si no, cada movimiento cancelaba esa consulta y pedia otra).
+  const q = state.askedBox;
+  const inAsked = q && b.getSouth() >= q[1] && b.getNorth() <= q[3] && b.getWest() >= q[0] && b.getEast() <= q[2];
+  const inside = inAsked || (b.getSouth() >= r.bbox.s && b.getNorth() <= r.bbox.n && w >= r.bbox.w && e <= r.bbox.e);
+  if (!inside) return false;
+  if (!r.partial) return true;
+  // Parcial: vale mientras el centro no se haya corrido mas de un 20 % de la vista.
+  const c = map.getCenter();
+  return Math.abs(c.lat - at.lat) < (b.getNorth() - b.getSouth()) * 0.2 && Math.abs(c.lng - at.lng) < (e - w) * 0.2;
+}
+
 function onMoveEnd() {
   clearTimeout(moveTimer);
   moveTimer = setTimeout(() => {
-    refresh();
+    // Seguir un avion mueve la camara en cada cuadro: sin esto, cada
+    // movimiento cancelaba la consulta en camino y pedia otra.
+    if (!viewCoveredByLast()) refresh();
     saveView();
   }, 300);
 }
@@ -1103,16 +1140,26 @@ function renderPlanes() {
   src.setData({ type: "FeatureCollection", features });
 }
 
-function renderSelectionOverlays() {
+// El halo sigue al avion en cada cuadro; el recorrido y la ruta (cientos de
+// tramos) se recalculan como mucho una vez por segundo, o al instante si
+// cambio algo (`force`: llego el historial, la ruta, otro seleccionado).
+let overlaysEmpty = false;
+let overlaysAt = 0;
+function renderSelectionOverlays(force = false) {
   if (!map?.getSource("sel")) return;
   const a = state.selected && state.planes.get(state.selected);
   if (!a) {
-    for (const id of ["sel", "trail", "route", "airports"]) map.getSource(id).setData(EMPTY_FC);
+    // Vaciar una vez basta: repetirlo en cada cuadro era trabajo tirado.
+    if (!overlaysEmpty) for (const id of ["sel", "trail", "route", "airports"]) map.getSource(id).setData(EMPTY_FC);
+    overlaysEmpty = true;
     return;
   }
+  overlaysEmpty = false;
   const now = Date.now();
   const [lat, lon] = livePos(a, now);
   map.getSource("sel").setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: {} }] });
+  if (!force && now - overlaysAt < 1000) return;
+  overlaysAt = now;
 
   const det = state.details.get(detailKey(a));
   const route = det && det !== "loading" ? checkedRoute(det.route, a) : null;
@@ -1149,14 +1196,28 @@ function renderSelectionOverlays() {
   }
 }
 
+// Cada cuadro reconstruye la capa de aviones entera. Con 1.200 aviones (Europa
+// completa) hacerlo 4 veces por segundo dejaba la pagina ocupada casi todo el
+// tiempo en un telefono de gama media. Lejos, los aviones se ven chicos y el
+// movimiento no se nota: se redibuja menos seguido.
+function tickDelay() {
+  const n = state.planes.size;
+  return n <= 250 ? TICK_MS : n <= 700 ? 500 : 1000;
+}
+
 function tick() {
   if (document.hidden || !map?.getSource("planes")) return;
-  renderPlanes();
+  // Sin movimiento estimado, la capa solo cambia cuando llegan datos (ingest).
+  if (smooth()) renderPlanes();
   renderSelectionOverlays();
   const a = state.selected && state.planes.get(state.selected);
-  if (a && state.follow) {
+  // Seguir: la camara salta al avion una vez por segundo. A zoom de ciudad
+  // un avion avanza menos de un pixel por segundo, asi que mas seguido no se
+  // nota, y cada movimiento de camara obliga a redibujar todo el mapa.
+  if (a && state.follow && Date.now() - (tick.followAt || 0) >= 1000) {
+    tick.followAt = Date.now();
     const [lat, lon] = livePos(a, Date.now());
-    map.easeTo({ center: [lon, lat], duration: TICK_MS, easing: (t) => t, essential: true });
+    map.jumpTo({ center: [lon, lat] });
   }
   if (a && state.panelMode === "detail") updateLiveCells(a);
 }
@@ -1197,7 +1258,7 @@ async function loadTrace(a) {
     state.history.delete(a.hex);
     return;
   }
-  if (state.selected === a.hex) { renderSelectionOverlays(); if (state.panelMode === "detail") renderPanel(); }
+  if (state.selected === a.hex) { renderSelectionOverlays(true); if (state.panelMode === "detail") renderPanel(); }
 }
 
 /* ===========================================================================
@@ -1215,7 +1276,7 @@ function select(hex, { fly = false } = {}) {
   loadTrace(a);
   renderPanel();
   renderPlanes();
-  renderSelectionOverlays();
+  renderSelectionOverlays(true);
   saveView();
   if (fly) {
     const [lat, lon] = livePos(a, Date.now());
@@ -1238,7 +1299,7 @@ async function loadDetails(a) {
     state.details.delete(key);
     return;
   }
-  if (state.selected === a.hex && state.panelMode === "detail") { renderPanel(); renderSelectionOverlays(); }
+  if (state.selected === a.hex && state.panelMode === "detail") { renderPanel(); renderSelectionOverlays(true); }
 }
 
 // La ruta sale del numero de vuelo, no del avion. Se acepta solo si el avion
@@ -1267,7 +1328,7 @@ function closePanel() {
   $("panel")._skel = null;
   $("btnList").setAttribute("aria-pressed", "false");
   renderPlanes();
-  renderSelectionOverlays();
+  renderSelectionOverlays(true);
   saveView();
 }
 
@@ -1555,7 +1616,7 @@ function openList() {
   state.selected = null;
   state.follow = false;
   renderPlanes();
-  renderSelectionOverlays();
+  renderSelectionOverlays(true);
   renderList();
   saveView();
 }
@@ -1875,7 +1936,7 @@ if (location.protocol === "file:") {
   state.error = "Abriste el archivo directo. Corre npm run dev y entra a http://localhost:3000";
   renderStatus();
 }
-setInterval(tick, TICK_MS);
+(function loop() { tick(); setTimeout(loop, tickDelay()); })();
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
   navigator.serviceWorker.register("/sw.js").catch(() => {});

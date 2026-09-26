@@ -1193,6 +1193,7 @@ function closePanel() {
   state.selected = null;
   state.follow = false;
   $("panel").hidden = true;
+  $("panel")._skel = null;
   $("btnList").setAttribute("aria-pressed", "false");
   renderPlanes();
   renderSelectionOverlays();
@@ -1216,7 +1217,6 @@ function renderPanel() {
   if (state.panelMode !== "detail") { panel.hidden = true; return; }
   const a = state.planes.get(state.selected);
   if (!a) { closePanel(); return; }
-  const scroll = panel.querySelector(".panel-scroll")?.scrollTop || 0;
   const now = Date.now();
   const det = state.details.get(detailKey(a));
   const info = det && det !== "loading" ? det : null;
@@ -1274,51 +1274,70 @@ function renderPanel() {
   const path = flightPath(a);
   const traceLoading = state.history.get(a.hex) === "loading";
 
-  panel.innerHTML = `
-    <div class="grab" aria-hidden="true"></div>
-    <div class="panel-head">
-      ${state.cameFromList ? `<button class="ghost" type="button" data-act="back">${ICON.back}Lista</button>` : ""}
-      <button class="ghost close" type="button" data-act="close" aria-label="Cerrar">${ICON.close}</button>
-    </div>
-    <div class="panel-scroll">
-      <div class="hero">
-        <div class="cs"><h2>${esc(labelOf(a))}</h2></div>
-        <div class="airline">${esc(airline || model || (cs ? "Vuelo " + cs : "Aeronave " + a.hex.toUpperCase()))}</div>
-        <div class="badges">${badges.join("")}</div>
+  // El esqueleto se arma UNA vez por avion. Despues, cada 5 s solo se
+  // reemplaza la seccion cuyo contenido cambio: rehacer todo el panel volvia
+  // a cargar la foto y el recuadro parpadeaba en cada actualizacion.
+  const skel = `${a.hex}|${state.cameFromList ? 1 : 0}`;
+  if (panel._skel !== skel) {
+    panel._skel = skel;
+    panel.innerHTML = `
+      <div class="grab" aria-hidden="true"></div>
+      <div class="panel-head">
+        ${state.cameFromList ? `<button class="ghost" type="button" data-act="back">${ICON.back}Lista</button>` : ""}
+        <button class="ghost close" type="button" data-act="close" aria-label="Cerrar">${ICON.close}</button>
       </div>
-      ${routeHtml}
-      ${photoHtml}
-      <div class="section-title">Vuelo ahora</div>
-      <div class="grid">
-        <div class="cell"><div class="l">Altitud</div><div class="v" data-live="alt"></div></div>
-        <div class="cell"><div class="l">Velocidad</div><div class="v" data-live="gs"></div></div>
-        <div class="cell"><div class="l" data-live="hdg-l">Rumbo</div><div class="v" data-live="hdg"></div></div>
-        <div class="cell"><div class="l">Vertical</div><div class="v" data-live="vr"></div></div>
-        <div class="cell"><div class="l">Squawk</div><div class="v ${a.emergency ? "danger" : ""}">${esc(a.squawk || "—")}</div></div>
-        <div class="cell"><div class="l">Ultima señal</div><div class="v text" data-live="seen"></div></div>
-        <div class="cell wide"><div class="l">Posicion</div><div class="v" data-live="pos"></div></div>
-      </div>
-      ${path.length >= 3 ? `<div class="section-title">Perfil de altitud</div><div class="profile" data-live="profile"></div>` : traceLoading ? `<div class="section-title">Perfil de altitud</div><div class="profile"><div class="axis">Cargando el recorrido…</div></div>` : ""}
-      <div class="section-title">Aeronave</div>
-      <div class="grid">
-        <div class="cell"><div class="l">Matricula</div><div class="v">${esc(reg || "—")}</div></div>
-        <div class="cell"><div class="l">Codigo ICAO</div><div class="v">${esc(a.hex.toUpperCase())}</div></div>
-        <div class="cell wide"><div class="l">Modelo</div><div class="v text">${esc(model || "—")}</div></div>
-        <div class="cell wide"><div class="l">Operador</div><div class="v text">${esc(owner || "—")}${ac?.country ? ` <small>· ${esc(ac.country)}</small>` : ""}</div></div>
-        <div class="cell"><div class="l">Categoria</div><div class="v text">${esc(CATEGORY[a.cat] || a.cat || "—")}</div></div>
-        <div class="cell"><div class="l">Fuentes</div><div class="v text">${esc(a.src.join(", "))}</div></div>
-      </div>
-      <div class="actions">
-        <button class="btn primary" type="button" data-act="follow" aria-pressed="${state.follow}">${ICON.follow}${state.follow ? "Siguiendo" : "Seguir"}</button>
-        <button class="btn" type="button" data-act="center">${ICON.center}Centrar</button>
-        <button class="btn wa" type="button" data-act="whatsapp">${ICON.wa}WhatsApp</button>
-        <button class="btn" type="button" data-act="share">${ICON.link}${navigator.share ? "Compartir" : "Copiar enlace"}</button>
-        <a class="btn" href="https://adsb.lol/?icao=${esc(a.hex)}" target="_blank" rel="noopener">${ICON.out}Historial</a>
-      </div>
-      <p class="fine">Posicion estimada entre actualizaciones a partir de la velocidad y el rumbo. Datos de receptores ADS-B voluntarios: pueden tener huecos o retraso.</p>
-    </div>`;
-  panel.hidden = false;
-  panel.querySelector(".panel-scroll").scrollTop = scroll;
+      <div class="panel-scroll">
+        <div class="hero" data-sec="hero"></div>
+        <div data-sec="route"></div>
+        <div data-sec="photo"></div>
+        <div class="section-title">Vuelo ahora</div>
+        <div class="grid">
+          <div class="cell"><div class="l">Altitud</div><div class="v" data-live="alt"></div></div>
+          <div class="cell"><div class="l">Velocidad</div><div class="v" data-live="gs"></div></div>
+          <div class="cell"><div class="l" data-live="hdg-l">Rumbo</div><div class="v" data-live="hdg"></div></div>
+          <div class="cell"><div class="l">Vertical</div><div class="v" data-live="vr"></div></div>
+          <div class="cell"><div class="l">Squawk</div><div class="v" data-live="sq"></div></div>
+          <div class="cell"><div class="l">Ultima señal</div><div class="v text" data-live="seen"></div></div>
+          <div class="cell wide"><div class="l">Posicion</div><div class="v" data-live="pos"></div></div>
+        </div>
+        <div data-sec="profile"></div>
+        <div class="section-title">Aeronave</div>
+        <div data-sec="aircraft"></div>
+        <div data-sec="actions"></div>
+        <p class="fine">Posicion estimada entre actualizaciones a partir de la velocidad y el rumbo. Datos de receptores ADS-B voluntarios: pueden tener huecos o retraso.</p>
+      </div>`;
+  }
+  const sec = (name, html) => {
+    const el = panel.querySelector(`[data-sec="${name}"]`);
+    if (el && el._html !== html) { el.innerHTML = html; el._html = html; }
+  };
+  sec("hero", `
+    <div class="cs"><h2>${esc(labelOf(a))}</h2></div>
+    <div class="airline">${esc(airline || model || (cs ? "Vuelo " + cs : "Aeronave " + a.hex.toUpperCase()))}</div>
+    <div class="badges">${badges.join("")}</div>`);
+  sec("route", routeHtml);
+  sec("photo", photoHtml);
+  sec("profile", path.length >= 3
+    ? `<div class="section-title">Perfil de altitud</div><div class="profile" data-live="profile"></div>`
+    : traceLoading ? `<div class="section-title">Perfil de altitud</div><div class="profile"><div class="axis">Cargando el recorrido…</div></div>` : "");
+  sec("aircraft", `
+    <div class="grid">
+      <div class="cell"><div class="l">Matricula</div><div class="v">${esc(reg || "—")}</div></div>
+      <div class="cell"><div class="l">Codigo ICAO</div><div class="v">${esc(a.hex.toUpperCase())}</div></div>
+      <div class="cell wide"><div class="l">Modelo</div><div class="v text">${esc(model || "—")}</div></div>
+      <div class="cell wide"><div class="l">Operador</div><div class="v text">${esc(owner || "—")}${ac?.country ? ` <small>· ${esc(ac.country)}</small>` : ""}</div></div>
+      <div class="cell"><div class="l">Categoria</div><div class="v text">${esc(CATEGORY[a.cat] || a.cat || "—")}</div></div>
+      <div class="cell"><div class="l">Fuentes</div><div class="v text">${esc(a.src.join(", "))}</div></div>
+    </div>`);
+  sec("actions", `
+    <div class="actions">
+      <button class="btn primary" type="button" data-act="follow" aria-pressed="${state.follow}">${ICON.follow}${state.follow ? "Siguiendo" : "Seguir"}</button>
+      <button class="btn" type="button" data-act="center">${ICON.center}Centrar</button>
+      <button class="btn wa" type="button" data-act="whatsapp">${ICON.wa}WhatsApp</button>
+      <button class="btn" type="button" data-act="share">${ICON.link}${navigator.share ? "Compartir" : "Copiar enlace"}</button>
+      <a class="btn" href="https://adsb.lol/?icao=${esc(a.hex)}" target="_blank" rel="noopener">${ICON.out}Historial</a>
+    </div>`);
+  if (panel.hidden) panel.hidden = false;
   $("btnList").setAttribute("aria-pressed", "false");
   updateLiveCells(a);
 }
@@ -1341,6 +1360,7 @@ function updateLiveCells(a) {
   else if (Math.abs(a.vr) < 200) set("vr", `Nivelado<br><small>${nf0.format(a.vr)} ft/min</small>`);
   else set("vr", `${a.vr > 0 ? "↑" : "↓"} ${nf0.format(Math.abs(a.vr))} <small>ft/min</small><br><small>${a.vr > 0 ? "Subiendo" : "Bajando"} · ${nf1.format(Math.abs(a.vr) * 0.00508)} m/s</small>`);
   set("seen", ago(ageOf(a, now)));
+  set("sq", a.emergency ? `<span style="color:var(--danger)">${esc(a.squawk || "—")}</span>` : esc(a.squawk || "—"));
   const c = map.getCenter();
   set("pos", `${lat.toFixed(4)}, ${lon.toFixed(4)} <small>· a ${nf0.format(distKm(c.lat, c.lng, lat, lon))} km del centro del mapa</small>`);
   const prof = panel.querySelector('[data-live="profile"]');
@@ -1470,6 +1490,7 @@ function renderList() {
   const r = state.lastResp;
   const srcTxt = r ? r.sources.map((s) => `${s.name} ${s.ok ? `(${s.count})` : "(sin respuesta)"}`).join(" · ") : "";
 
+  panel._skel = null;
   panel.innerHTML = `
     <div class="grab" aria-hidden="true"></div>
     <div class="panel-head"><button class="ghost close" type="button" data-act="close" aria-label="Cerrar">${ICON.close}</button></div>

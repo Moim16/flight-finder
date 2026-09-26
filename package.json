@@ -5,9 +5,11 @@
   "type": "module",
   "description": "Vuelos en tiempo real sobre un mapa: posicion, altitud, velocidad, ruta y foto del avion (Vercel, sin base de datos)",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
     "test": "node scripts/smoke.mjs",
     "icons": "node scripts/make-icons.mjs"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

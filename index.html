@@ -266,8 +266,6 @@ button { cursor:pointer; }
 }
 .btn svg { width:17px; height:17px; }
 .btn:hover { border-color:var(--ink); }
-.btn.wa { color:#1faa53; }
-.btn.wa:hover { border-color:#1faa53; }
 .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .btn.primary[aria-pressed="false"] { background:var(--solid); color:var(--ink); border-color:var(--line-2); }
 .fine { padding:0 20px 18px; color:var(--faint); font-size:12px; }
@@ -1280,7 +1278,6 @@ const ICON = {
   center: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/><circle cx="12" cy="12" r="2"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
   out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
-  wa: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3z"/></svg>',
   plane: '<svg viewBox="0 0 64 64" fill="currentColor"><path d="M32 4C34 4 35 7 35 10L35 24L58 36L58 40L35 34L35 50L42 56L42 59L32 56L22 59L22 56L29 50L29 34L6 40L6 36L29 24L29 10C29 7 30 4 32 4Z"/></svg>',
 };
 
@@ -1408,7 +1405,6 @@ function renderPanel() {
     <div class="actions">
       <button class="btn primary" type="button" data-act="follow" aria-pressed="${state.follow}">${ICON.follow}${state.follow ? "Siguiendo" : "Seguir"}</button>
       <button class="btn" type="button" data-act="center">${ICON.center}Centrar</button>
-      <button class="btn wa" type="button" data-act="whatsapp">${ICON.wa}WhatsApp</button>
       <button class="btn" type="button" data-act="share">${ICON.link}${navigator.share ? "Compartir" : "Copiar enlace"}</button>
       <a class="btn" href="https://adsb.lol/?icao=${esc(a.hex)}" target="_blank" rel="noopener">${ICON.out}Historial</a>
     </div>`);
@@ -1535,9 +1531,6 @@ $("panel").addEventListener("click", async (e) => {
       break;
     case "center":
       if (a) { const [lat, lon] = livePos(a, Date.now()); map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 9), essential: true }); }
-      break;
-    case "whatsapp":
-      if (a) window.open(`https://wa.me/?text=${encodeURIComponent(shareText(a))}`, "_blank", "noopener");
       break;
     case "share": {
       if (!a) break;

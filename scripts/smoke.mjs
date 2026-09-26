@@ -108,6 +108,33 @@ await test("/api/flights: el area completa, una fuente caida no tumba la respues
   }
 });
 
+await test("/api/flights POST: OpenSky prestado por el cliente se funde y clasifica", async () => {
+  const realFetch = globalThis.fetch;
+  let askedOpenSky = false;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("opensky")) { askedOpenSky = true; throw new Error("no deberia consultar OpenSky"); }
+    return new Response(JSON.stringify({ ac: [] }));
+  };
+  try {
+    const { default: handler } = await import("../api/flights.js");
+    const res = fakeRes();
+    // Otra zona que la prueba anterior: el cache de 4 s por circulo la contaminaria.
+    const states = [["e80001", "RCH553  ", "Argentina", 100, 100, -58.5, -34.6, 3000, false, 100, 90, 0, null, 3100, null, false, 0, 0]];
+    await handler({ method: "POST", query: { bbox: "-59,-35,-58,-34" }, body: { opensky: { time: 101, states } } }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(askedOpenSky, false);
+    assert.equal(res.body.aircraft.length, 1);
+    assert.equal(res.body.aircraft[0].kind, "mil");                  // RCH: la regla del servidor
+    assert.equal(res.headers["cache-control"], "no-store");
+    const bad = fakeRes();
+    await handler({ method: "POST", query: { bbox: "-59,-35,-58,-34" }, body: { nada: 1 } }, bad);
+    assert.equal(bad.statusCode, 400);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 await test("area: la grilla cubre la vista y cruza el antimeridiano", async () => {
   const { cellsFor, normalizeBbox, openskyBoxes } = await import("../lib/area.js");
   const b = normalizeBbox({ w: 175, s: -20, e: 185, n: -15 });

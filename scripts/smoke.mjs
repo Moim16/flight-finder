@@ -75,30 +75,46 @@ await test("fusion: gana la posicion mas reciente y se completan los datos", () 
 });
 
 /* ------------------------------------------------- handler con fetch falso */
-await test("/api/flights: una fuente caida no tumba la respuesta", async () => {
+await test("/api/flights: el area completa, una fuente caida no tumba la respuesta", async () => {
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const u = String(url);
-    if (u.includes("adsb.lol")) return new Response(JSON.stringify({ ac: [{ hex: "e8043d", flight: "LXP204", lat: -33.4, lon: -70.8, alt_baro: 5000, seen_pos: 1 }] }));
+    if (u.includes("adsb.lol")) return new Response(JSON.stringify({ ac: [
+      { hex: "e8043d", flight: "LXP204", lat: -33.4, lon: -70.8, alt_baro: 5000, seen_pos: 1 },
+      { hex: "abcdef", flight: "FDX10", lat: -10, lon: -70.8, alt_baro: 5000, seen_pos: 1 },   // fuera del area
+    ] }));
     if (u.includes("adsb.fi")) return new Response("fallo", { status: 503 });
-    if (u.includes("opensky")) return new Response(JSON.stringify({ time: 1, states: [["cc1111", "SKU100", "Chile", 1, 1, -70.7, -33.3, 3000, false, 100, 90, 0, null, 3100, null, false, 0, 0]] }));
+    if (u.includes("opensky")) return new Response(JSON.stringify({ time: 1, states: [
+      ["cc1111", "SKU100", "Chile", 1, 1, -70.7, -33.3, 3000, false, 100, 90, 0, null, 3100, null, false, 0, 0],
+      ["e8043d", "LXP204", "Chile", 1, 1, -70.81, -33.41, 1500, false, 100, 90, 0, null, 1600, null, false, 0, 0], // repetido
+    ] }));
     throw new Error("url inesperada " + u);
   };
   try {
     const { default: handler } = await import("../api/flights.js");
     const res = fakeRes();
-    await handler({ method: "GET", query: { lat: "-33.39", lon: "-70.79", r: "60" } }, res);
+    await handler({ method: "GET", query: { bbox: "-71.9,-34.1,-69.9,-32.6" } }, res);
     assert.equal(res.statusCode, 200);
-    assert.equal(res.body.radius, 80);                        // escalon >= 60
-    assert.deepEqual(res.body.center, { lat: -33.4, lon: -70.8 }); // redondeo a 0,05
-    assert.equal(res.body.aircraft.length, 2);
+    assert.deepEqual(res.body.bbox, { w: -72, s: -34.5, e: -69.5, n: -32.5 });   // redondeado hacia afuera
+    assert.equal(res.body.aircraft.length, 2);                                      // sin repetidos ni los de afuera
     assert.ok(res.body.aircraft.every((a) => a.kind));
+    const lxp = res.body.aircraft.find((a) => a.hex === "e8043d");
+    assert.deepEqual(lxp.src.sort(), ["OpenSky", "adsb.lol"]);
     const fi = res.body.sources.find((s) => s.name === "adsb.fi");
     assert.equal(fi.ok, false);
     assert.match(res.headers["cache-control"], /s-maxage=4/);
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+await test("area: la grilla cubre la vista y cruza el antimeridiano", async () => {
+  const { cellsFor, normalizeBbox, openskyBoxes } = await import("../lib/area.js");
+  const b = normalizeBbox({ w: 175, s: -20, e: 185, n: -15 });
+  assert.equal(b.w, 175); assert.equal(b.e, 185);
+  assert.equal(openskyBoxes(b).length, 2);
+  assert.ok(cellsFor(b).every((c) => c.lon >= -180 && c.lon <= 180));
+  assert.deepEqual(normalizeBbox({ w: -200, s: 0, e: 200, n: 10 }), { w: -180, s: 0, e: 180, n: 10 });
 });
 
 /* ------------------------------------------------------------ historial */

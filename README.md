@@ -35,13 +35,15 @@ Otras cosas: **Seguir** mantiene el mapa centrado en el avión; **WhatsApp** y *
 | Buscador de lugares | [Photon](https://photon.komoot.io) (OpenStreetMap) | No |
 | Mapa base | [CARTO](https://carto.com/basemaps) Dark Matter / Positron | No |
 
-**Por qué tres fuentes de posiciones.** Todas dependen de antenas ADS-B de voluntarios, y cada red tiene huecos distintos. En Sudamérica cada una por separado ve muy poco. El servidor consulta las tres en paralelo y las **funde por el código ICAO** del avión: gana la posición más reciente y los datos que falten (matrícula, tipo) se completan con otra fuente. Si una falla, la respuesta sale igual con las demás, y la lista indica cuántos aviones aportó cada una.
+**Por qué tres fuentes de posiciones.** Todas dependen de antenas ADS-B de voluntarios, y cada red tiene huecos distintos. En Sudamérica cada una por separado ve muy poco. El servidor consulta las tres en paralelo y las **funde por el código ICAO** del avión: cada avión aparece una vez, gana la posición más reciente y los datos que falten (matrícula, tipo) se completan con otra fuente. Si una falla, la respuesta sale igual con las demás, y la lista indica cuántos aviones aportó cada una.
+
+**Se ve todo lo que está en pantalla.** La página pide el rectángulo visible, sea una ciudad, un país o un continente. OpenSky acepta cajas de cualquier tamaño y cubre la vista completa en una consulta. adsb.lol y adsb.fi solo aceptan círculos de 250 NM y limitan cuántas consultas se les hacen, así que completan el centro de la vista (`lib/area.js`). Con Europa en pantalla salen del orden de 900 vuelos.
 
 **La ruta se valida antes de mostrarla.** adsbdb la obtiene del *número de vuelo*, no del avión, y los vuelos con escalas o de ida y vuelta comparten número: `LAN800` es Santiago–Auckland–Sídney, pero la base guarda un solo tramo, y `BAW34` figura como Londres → Kuala Lumpur aunque el avión venga de vuelta. Por eso la página comprueba que el avión esté cerca del círculo máximo entre origen y destino **y que vaya hacia el destino**. Si no, lo avisa y no dibuja la ruta.
 
 **El tipo de vuelo se deduce.** ADS-B no dice "comercial": una aerolínea transmite su indicativo ICAO (3 letras y número, `LAN800`) y una avioneta su matrícula. Carga y jets ejecutivos se separan por listas de operadores (`lib/kinds.js`). "Militar" depende de la base de adsb.lol/adsb.fi, y muchos militares no transmiten.
 
-**Límites.** Donde no hay receptores no hay aviones, aunque haya vuelos: océanos, zonas rurales y buena parte de Sudamérica. Cada consulta cubre como máximo **250 NM** alrededor del centro. Si la vista es más grande, el mapa dibuja el círculo consultado.
+**Límites.** Donde no hay receptores no hay aviones, aunque haya vuelos: océanos, zonas rurales y buena parte de Sudamérica (Chile completo muestra muy pocos). Sin cuenta de OpenSky, los 400 créditos diarios se gastan rápido mirando zonas grandes: al agotarse, OpenSky descansa 10 minutos y las vistas amplias quedan solo con el centro.
 
 ---
 
@@ -64,7 +66,7 @@ node --env-file=.env scripts/dev.mjs
 | Variable | Para qué |
 |---|---|
 | `CONTACT_URL` | Contacto que va en el User-Agent. planespotters rechaza peticiones sin él. Por defecto, la URL de este repo. |
-| `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` | Opcional. Una cuenta gratis de OpenSky sube el límite de 400 a 4000 créditos al día. Sin cuenta, al agotarse los créditos el servidor deja de consultar OpenSky por 10 minutos y sigue con las otras dos fuentes. |
+| `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` | **Recomendado.** Una cuenta gratis de OpenSky sube el límite de 400 a 4000 créditos al día. OpenSky es la fuente que cubre las vistas amplias; sin cuenta, al agotarse los créditos descansa 10 minutos y esas vistas quedan solo con el centro. |
 
 ---
 
@@ -73,7 +75,7 @@ node --env-file=.env scripts/dev.mjs
 1. Importar el repo en Vercel. No necesita build: son archivos estáticos y funciones en `api/`.
 2. (Opcional) Cargar `OPENSKY_CLIENT_ID` y `OPENSKY_CLIENT_SECRET` en *Settings → Environment Variables*.
 
-**Caché compartida.** `/api/flights` responde con `s-maxage=4`, y tanto el cliente como el servidor redondean el centro a 0,05° y el radio a escalones fijos. Así, todos los que miran la misma zona reciben **la misma respuesta desde la CDN**, y las fuentes gratuitas reciben una consulta por zona cada pocos segundos, no una por usuario. Rutas, fotos y lugares se cachean por horas.
+**Caché compartida.** `/api/flights` responde con `s-maxage=4` y el servidor redondea el rectángulo a medio grado. Así, todos los que miran la misma zona reciben **la misma respuesta desde la CDN**, y las fuentes gratuitas reciben una consulta por zona cada pocos segundos, no una por usuario. Los círculos de adsb.lol salen de una grilla fija, así que mover el mapa un poco reusa los mismos. Rutas, fotos y lugares se cachean por horas.
 
 `vercel.json` fija las cabeceras de seguridad y la CSP, y el servidor local las lee del mismo archivo, así que lo que la CSP bloquea en producción también se bloquea en local. Si agregas un servicio externo nuevo (tiles, imágenes, scripts), hay que sumar su dominio ahí.
 
@@ -83,7 +85,8 @@ node --env-file=.env scripts/dev.mjs
 
 ```
 index.html           la app completa: mapa (MapLibre GL), paneles, buscador
-api/flights.js       aviones alrededor de un punto (fusion de 3 fuentes)
+api/flights.js       aviones del rectangulo visible (fusion de 3 fuentes)
+lib/area.js          reparte el area entre las fuentes (caja, circulos, pausas)
 api/details.js       aeronave, ruta y foto de un avion
 api/places.js        buscador de ciudades y aeropuertos
 api/trace.js         recorrido del vuelo actual (desde el despegue)

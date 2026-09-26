@@ -8,20 +8,27 @@ Los errores responden `{ "error": "mensaje para mostrar" }` con código 4xx/5xx.
 
 ---
 
-## `GET /api/flights` — aviones alrededor de un punto
+## `GET /api/flights` — aviones de un área
 
 | Parámetro | | |
 |---|---|---|
-| `lat`, `lon` | obligatorios | centro, en grados |
-| `r` | opcional (80) | radio en NM, 1 a 250 |
+| `bbox` | `oeste,sur,este,norte` | el rectángulo visible, en grados. El este puede pasar de 180 si la vista cruza el antimeridiano |
+| `lat`, `lon`, `r` | alternativa | un punto y un radio en NM; se convierte en la caja que lo contiene |
 
-El servidor redondea el centro a 0,05° y el radio a un escalón (10, 25, 50, 80, 120, 170, 250) para que la CDN comparta la respuesta entre usuarios. **Pide un poco más de radio del que ves** (la web suma 3 % + 4 NM) para que el redondeo no deje huecos en el borde.
+El servidor redondea el rectángulo hacia afuera a medio grado (así la CDN comparte la respuesta) y lo reparte entre las fuentes según lo que cada una acepta (`lib/area.js`):
+
+- **OpenSky** recibe la caja completa: una consulta cubre toda la vista, sea una ciudad o un continente.
+- **adsb.lol** solo acepta círculos de hasta 250 NM y corta si se le piden muchos seguidos: se consulta en los 2 círculos de una grilla fija más cercanos al centro de la vista.
+- **adsb.fi** permite 1 consulta por segundo: solo el círculo del centro.
+
+Si una fuente responde 429 (demasiadas consultas), descansa un minuto y se sigue con las otras. Todo se funde por `hex` y se recorta al rectángulo: cada avión aparece una sola vez.
 
 ```json
 {
   "now": 1790389117000,
-  "center": { "lat": -33.4, "lon": -70.8 },
-  "radius": 80,
+  "bbox": { "w": -72, "s": -34.5, "e": -69.5, "n": -32.5 },
+  "cells": 1,
+  "partial": false,
   "aircraft": [ /* avion, ver abajo */ ],
   "sources": [
     { "name": "adsb.lol", "ok": true, "count": 13 },
@@ -30,6 +37,8 @@ El servidor redondea el centro a 0,05° y el radio a un escalón (10, 25, 50, 80
   ]
 }
 ```
+
+`partial: true` significa que la vista es más grande que los círculos de adsb.lol y adsb.fi: el borde solo lo cubre OpenSky. `count` es cuántos de los aviones del resultado vio cada fuente (uno visto por dos cuenta en las dos).
 
 ### Un avión
 
@@ -56,7 +65,7 @@ El servidor redondea el centro a 0,05° y el radio a un escalón (10, 25, 50, 80
 | `seen` | number | segundos desde la última posición |
 | `src` | string[] | fuentes que lo vieron |
 
-Caché: `s-maxage=4`. Conviene pedir cada 5 s.
+Caché: `s-maxage=4`. Conviene pedir cada 5 s, con un margen de ~4 % alrededor de la vista para que los aviones no aparezcan de golpe en el borde.
 
 ---
 

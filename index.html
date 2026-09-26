@@ -424,7 +424,6 @@ button { cursor:pointer; }
   <h3>Mapa</h3>
   <label class="check"><input type="checkbox" id="fGround"><span>Ocultar aviones en tierra<small>Los que estan en pista o en la plataforma</small></span></label>
   <label class="check"><input type="checkbox" id="fLabels"><span>Mostrar etiquetas<small>Numero de vuelo y altitud junto a cada avion</small></span></label>
-  <label class="check"><input type="checkbox" id="fRing"><span>Mostrar area consultada<small>El circulo de hasta 250 NM que se pide a las fuentes</small></span></label>
   <h3>Tema</h3>
   <div class="chips" style="padding:0 10px 10px">
     <button class="chip" type="button" data-theme-set="system">Sistema</button>
@@ -468,7 +467,6 @@ const TICK_MS = 250;            // cada cuanto se redibujan (entre medio se esti
 const MAX_EXTRAPOLATE_S = 60;   // mas alla de esto, no se inventa movimiento
 const STALE_S = 30;             // un avion sin señal por mas de esto se ve apagado
 const LOST_S = 90;              // el seleccionado se da por perdido
-const MAX_RADIUS_NM = 250;
 const KM_PER_NM = 1.852;
 const TRAIL_MAX = 240;
 const LIST_MAX = 300;
@@ -540,7 +538,7 @@ const state = {
   lastOk: 0,
   lastResp: null,
   error: null,
-  filters: { ground: false, labels: true, ring: false, kinds: [] },   // kinds vacio = todos
+  filters: { ground: false, labels: true, kinds: [] },   // kinds vacio = todos
   themePref: "system",
 };
 
@@ -767,12 +765,10 @@ function setupLayers() {
   const flown = cssVar("--flown") || accent;
   const todo = cssVar("--todo") || "#7cc4ff";
 
-  for (const id of ["ring", "route", "airports", "trail", "planes", "sel"]) {
+  for (const id of ["route", "airports", "trail", "planes", "sel"]) {
     if (!map.getSource(id)) map.addSource(id, { type: "geojson", data: EMPTY_FC });
   }
 
-  map.addLayer({ id: "ring", type: "line", source: "ring",
-    paint: { "line-color": accent, "line-opacity": 0.55, "line-width": 1.5, "line-dasharray": [3, 3] } });
   // Lo que falta: arco de circulo maximo hasta el destino, punteado.
   map.addLayer({ id: "route-line", type: "line", source: "route",
     layout: { "line-cap": "round" },
@@ -826,7 +822,6 @@ function setupLayers() {
 
   renderPlanes();
   renderSelectionOverlays();
-  renderRing();
 }
 
 function initMap() {
@@ -896,29 +891,28 @@ let inflight = null;
 let pollTimer = null;
 let moveTimer = null;
 
-function viewRadiusNm() {
-  const c = map.getCenter();
+// El area que se pide es EL RECTANGULO VISIBLE (con un margen chico para que
+// no aparezcan aviones de golpe en el borde al moverse). El servidor lo
+// reparte entre las fuentes; ver lib/area.js.
+function viewBbox() {
   const b = map.getBounds();
-  const corners = [b.getNorthWest(), b.getNorthEast(), b.getSouthWest(), b.getSouthEast()];
-  const km = Math.max(...corners.map((p) => distKm(c.lat, c.lng, p.lat, p.lng)));
-  return km / KM_PER_NM;
+  const padLon = (b.getEast() - b.getWest()) * 0.04;
+  const padLat = (b.getNorth() - b.getSouth()) * 0.04;
+  return [b.getWest() - padLon, Math.max(-85, b.getSouth() - padLat), b.getEast() + padLon, Math.min(85, b.getNorth() + padLat)]
+    .map((x) => x.toFixed(2)).join(",");
 }
 
 async function refresh() {
   clearTimeout(pollTimer);
   if (document.hidden) { pollTimer = setTimeout(refresh, POLL_MS); return; }
-  const c = map.getCenter().wrap();
-  const want = viewRadiusNm();
-  // +4 NM: el servidor redondea el centro a 0,05° y no queremos huecos en el borde.
-  const r = Math.min(MAX_RADIUS_NM, Math.ceil(want * 1.03 + 4));
   inflight?.abort();
   const ctrl = new AbortController();
   inflight = ctrl;
   try {
-    const res = await fetch(`/api/flights?lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&r=${r}`, { signal: ctrl.signal });
+    const res = await fetch(`/api/flights?bbox=${viewBbox()}`, { signal: ctrl.signal });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const data = await res.json();
-    ingest(data, want);
+    ingest(data);
     state.error = data.sources.every((s) => !s.ok) ? "Ninguna fuente respondio. Reintento en unos segundos." : null;
   } catch (err) {
     if (err.name === "AbortError") return;
@@ -928,12 +922,14 @@ async function refresh() {
     console.warn("[vuelos]", err);
   } finally {
     if (inflight === ctrl) inflight = null;
-    renderStatus();
-    pollTimer = setTimeout(refresh, POLL_MS);
+    if (!ctrl.signal.aborted) {
+      renderStatus();
+      pollTimer = setTimeout(refresh, POLL_MS);
+    }
   }
 }
 
-function ingest(data, wantNm) {
+function ingest(data) {
   const now = Date.now();
   const next = new Map();
   for (const a of data.aircraft) {
@@ -957,7 +953,7 @@ function ingest(data, wantNm) {
   for (const hex of state.trails.keys()) if (!next.has(hex)) state.trails.delete(hex);
 
   state.lastOk = now;
-  state.lastResp = { ...data, wantNm };
+  state.lastResp = data;
 
   if (state.pendingHex && next.has(state.pendingHex)) {
     const hex = state.pendingHex;
@@ -977,7 +973,6 @@ function ingest(data, wantNm) {
     ingest._warned = true;
     toast("Hay vuelos en la zona, pero ninguno del tipo elegido.");
   }
-  renderRing();
   renderPlanes();
   if (state.panelMode === "list") renderList();
   if (state.panelMode === "detail") renderPanel();
@@ -1083,27 +1078,6 @@ function renderSelectionOverlays() {
     map.getSource("route").setData(EMPTY_FC);
     map.getSource("airports").setData(EMPTY_FC);
   }
-}
-
-// El circulo consultado se muestra si se pidio en opciones o si la vista es
-// mas grande que lo que las fuentes entregan (250 NM): asi se entiende por
-// que no hay aviones en los bordes.
-function renderRing() {
-  const src = map?.getSource("ring");
-  const r = state.lastResp;
-  if (!src || !r) return;
-  const capped = r.wantNm > MAX_RADIUS_NM;
-  if (!state.filters.ring && !capped) { src.setData(EMPTY_FC); return; }
-  const coords = [];
-  for (let b = 0; b <= 360; b += 4) {
-    const [la, lo] = destination(r.center.lat, r.center.lon, b, r.radius * KM_PER_NM);
-    coords.push([lo, la]);
-  }
-  for (let i = 1; i < coords.length; i++) {
-    while (coords[i][0] - coords[i - 1][0] > 180) coords[i][0] -= 360;
-    while (coords[i - 1][0] - coords[i][0] > 180) coords[i][0] += 360;
-  }
-  src.setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} }] });
 }
 
 function tick() {
@@ -1580,11 +1554,11 @@ function renderStatus() {
     txt.textContent = state.error;
   } else if (r) {
     const n = visiblePlanes().length;
-    const capped = r.wantNm > MAX_RADIUS_NM;
     const okSources = r.sources.filter((s) => s.ok).map((s) => s.name);
     const kinds = state.filters.kinds.length ? " " + state.filters.kinds.map((k) => KINDS.find((x) => x.id === k).name.toLowerCase()).join(" y ") : "";
-    txt.innerHTML = `<b class="num">${nf0.format(n)}</b> ${n === 1 ? "vuelo" : "vuelos"}${esc(kinds)} · ${capped ? `${MAX_RADIUS_NM} NM alrededor del centro` : "en la vista"} · ${esc(ago((Date.now() - state.lastOk) / 1000))}`;
-    box.title = `Fuentes: ${r.sources.map((s) => `${s.name} ${s.ok ? s.count : "sin respuesta"}`).join(", ")}`;
+    txt.innerHTML = `<b class="num">${nf0.format(n)}</b> ${n === 1 ? "vuelo" : "vuelos"}${esc(kinds)} en la vista · ${esc(ago((Date.now() - state.lastOk) / 1000))}`;
+    box.title = `Fuentes: ${r.sources.map((s) => `${s.name} ${s.ok ? s.count : "sin respuesta"}`).join(", ")}` +
+      (r.partial ? ". Vista amplia: toda el area sale de OpenSky y el centro se completa con adsb.lol y adsb.fi." : "");
     if (!okSources.length) txt.textContent = "Ninguna fuente respondio.";
   }
   const em = [...state.planes.values()].filter((a) => a.emergency);
@@ -1739,14 +1713,13 @@ document.addEventListener("click", (e) => {
   if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("#btnFilters")) { pop.hidden = true; $("btnFilters").setAttribute("aria-pressed", "false"); }
 });
 
-for (const [id, key] of [["fGround", "ground"], ["fLabels", "labels"], ["fRing", "ring"]]) {
+for (const [id, key] of [["fGround", "ground"], ["fLabels", "labels"]]) {
   const el = $(id);
   el.checked = state.filters[key];
   el.addEventListener("change", () => {
     state.filters[key] = el.checked;
     saveFilters();
     if (key === "labels" && map.getLayer("plane-labels")) map.setLayoutProperty("plane-labels", "visibility", el.checked ? "visible" : "none");
-    if (key === "ring") renderRing();
     applyFilters();
   });
 }

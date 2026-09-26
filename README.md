@@ -13,13 +13,14 @@ Mismo stack que `deudas`: un solo `index.html` sin frameworks, funciones serverl
 | **Mapa** | Cada avión como un ícono girado según su rumbo y **coloreado por altitud** (naranja cerca del suelo, violeta sobre 40.000 ft, gris en tierra). La forma cambia según el tipo: avioneta, jet, avión pesado o helicóptero. Entre cada actualización los aviones **se mueven con suavidad**: su posición se estima con la velocidad y el rumbo. |
 | **Etiquetas** | Con zoom cercano, el número de vuelo y la altitud (`FL350` sobre 10.000 ft). |
 | **Detalle** (clic en un avión) | Número de vuelo, aerolínea, modelo, foto, ruta origen → destino con el avance del trayecto, altitud (ft y m), velocidad (kt y km/h), rumbo con brújula, velocidad vertical (subiendo, bajando o nivelado), squawk, posición, matrícula, operador, categoría y de qué fuentes llegó el dato. |
-| **Estela y ruta** | Del avión seleccionado se dibuja la trayectoria recorrida (coloreada por altitud) y el arco de círculo máximo hacia el aeropuerto de destino. |
-| **Perfil de altitud** | Un gráfico de la altitud desde que empezaste a seguirlo. |
+| **Recorrido y ruta** | Al seleccionar un avión se dibuja **desde dónde partió y hacia dónde va**: lo recorrido en ámbar (la trayectoria real desde el despegue, punteada donde no hubo señal) y lo que falta en azul punteado hasta el aeropuerto de destino. |
+| **Perfil de altitud** | La altitud de todo el vuelo, desde el despegue. |
+| **Tipo de vuelo** | Chips para filtrar: Comerciales, Carga, Privados, Militares y Helicópteros, cada uno con cuántos hay en la zona. |
 | **Lista** | Todos los vuelos de la zona, ordenables por cercanía, altitud o velocidad. Las emergencias salen primero. |
 | **Buscador** | Ciudades y aeropuertos (para mover el mapa) y vuelos ya cargados, por número de vuelo, matrícula, código ICAO o tipo. Atajo: tecla `/`. |
 | **Emergencias** | Squawk 7500/7600/7700 o aviso de emergencia ADS-B: ícono rojo, anillo y un aviso en la barra inferior que lleva directo al avión. |
 
-Otras cosas: **Seguir** mantiene el mapa centrado en el avión, **Copiar enlace** comparte la zona y el avión seleccionado (`?lat=..&lon=..&z=..&hex=..`), y hay tema claro, oscuro o el del sistema. Se instala como app (PWA) desde el navegador del teléfono.
+Otras cosas: **Seguir** mantiene el mapa centrado en el avión; **WhatsApp** y **Compartir** mandan el vuelo con un enlace `/vuelo/<hex>` que en el chat se ve con título, ruta y foto del avión, y al abrirlo selecciona ese avión; hay tema claro, oscuro o el del sistema. Se instala como app (PWA) desde el navegador del teléfono.
 
 ---
 
@@ -28,6 +29,7 @@ Otras cosas: **Seguir** mantiene el mapa centrado en el avión, **Copiar enlace*
 | Dato | Fuente | Llave |
 |---|---|---|
 | Posiciones en vivo | [adsb.lol](https://adsb.lol) + [adsb.fi](https://adsb.fi) + [OpenSky](https://opensky-network.org), **las tres a la vez** | No (OpenSky opcional) |
+| Recorrido desde el despegue | traza diaria de [adsb.lol](https://adsb.lol) | No |
 | Aeronave y ruta por número de vuelo | [adsbdb](https://www.adsbdb.com) | No |
 | Foto | [planespotters.net](https://www.planespotters.net) | No |
 | Buscador de lugares | [Photon](https://photon.komoot.io) (OpenStreetMap) | No |
@@ -35,7 +37,9 @@ Otras cosas: **Seguir** mantiene el mapa centrado en el avión, **Copiar enlace*
 
 **Por qué tres fuentes de posiciones.** Todas dependen de antenas ADS-B de voluntarios, y cada red tiene huecos distintos. En Sudamérica cada una por separado ve muy poco. El servidor consulta las tres en paralelo y las **funde por el código ICAO** del avión: gana la posición más reciente y los datos que falten (matrícula, tipo) se completan con otra fuente. Si una falla, la respuesta sale igual con las demás, y la lista indica cuántos aviones aportó cada una.
 
-**La ruta se valida antes de mostrarla.** adsbdb la obtiene del *número de vuelo*, no del avión, y los vuelos con escalas comparten número: `LAN800` es Santiago–Auckland–Sídney, pero la base guarda un solo tramo. Por eso la página comprueba que el avión esté cerca del círculo máximo entre origen y destino. Si no lo está, lo avisa y no dibuja la ruta.
+**La ruta se valida antes de mostrarla.** adsbdb la obtiene del *número de vuelo*, no del avión, y los vuelos con escalas o de ida y vuelta comparten número: `LAN800` es Santiago–Auckland–Sídney, pero la base guarda un solo tramo, y `BAW34` figura como Londres → Kuala Lumpur aunque el avión venga de vuelta. Por eso la página comprueba que el avión esté cerca del círculo máximo entre origen y destino **y que vaya hacia el destino**. Si no, lo avisa y no dibuja la ruta.
+
+**El tipo de vuelo se deduce.** ADS-B no dice "comercial": una aerolínea transmite su indicativo ICAO (3 letras y número, `LAN800`) y una avioneta su matrícula. Carga y jets ejecutivos se separan por listas de operadores (`lib/kinds.js`). "Militar" depende de la base de adsb.lol/adsb.fi, y muchos militares no transmiten.
 
 **Límites.** Donde no hay receptores no hay aviones, aunque haya vuelos: océanos, zonas rurales y buena parte de Sudamérica. Cada consulta cubre como máximo **250 NM** alrededor del centro. Si la vista es más grande, el mapa dibuja el círculo consultado.
 
@@ -82,6 +86,13 @@ index.html           la app completa: mapa (MapLibre GL), paneles, buscador
 api/flights.js       aviones alrededor de un punto (fusion de 3 fuentes)
 api/details.js       aeronave, ruta y foto de un avion
 api/places.js        buscador de ciudades y aeropuertos
+api/trace.js         recorrido del vuelo actual (desde el despegue)
+api/share.js         /vuelo/<hex>: la pagina con la vista previa del vuelo
+lib/details.js       aeronave, ruta y foto (compartido por details y share)
+lib/trace.js         traza diaria de adsb.lol recortada al vuelo actual
+lib/kinds.js         tipo de vuelo: comercial, carga, privado, militar, helicoptero
+docs/API.md          contrato de la API (web y app movil)
+docs/APP-MOVIL.md    lo preparado para la app nativa
 lib/sources.js       cada proveedor normalizado a un solo formato + fusion
 lib/geo.js           distancias y cajas sobre la esfera
 lib/http.js          fetch con timeout, cache de CDN, utilidades
@@ -109,6 +120,6 @@ Entre respuestas (cada 5 s), la página redibuja cada 250 ms moviendo cada avió
 
 ## Pendiente / ideas
 
-- Historial completo de la trayectoria al seleccionar (hoy la estela empieza cuando el avión aparece en pantalla).
-- Filtro por aerolínea o tipo de avión.
+- App móvil nativa: ver [`docs/APP-MOVIL.md`](docs/APP-MOVIL.md).
+- Filtro por aerolínea.
 - Buscar un vuelo fuera de la zona visible (requiere consultar por hex a las fuentes).

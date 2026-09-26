@@ -7,6 +7,9 @@
 
 import assert from "node:assert/strict";
 import { normalizeReadsb, normalizeOpenSky, merge } from "../lib/sources.js";
+import { currentLeg } from "../lib/trace.js";
+import { routeMatches } from "../lib/geo.js";
+import { kindOf } from "../lib/kinds.js";
 
 let passed = 0;
 const test = async (name, fn) => {
@@ -89,6 +92,7 @@ await test("/api/flights: una fuente caida no tumba la respuesta", async () => {
     assert.equal(res.body.radius, 80);                        // escalon >= 60
     assert.deepEqual(res.body.center, { lat: -33.4, lon: -70.8 }); // redondeo a 0,05
     assert.equal(res.body.aircraft.length, 2);
+    assert.ok(res.body.aircraft.every((a) => a.kind));
     const fi = res.body.sources.find((s) => s.name === "adsb.fi");
     assert.equal(fi.ok, false);
     assert.match(res.headers["cache-control"], /s-maxage=4/);
@@ -96,6 +100,83 @@ await test("/api/flights: una fuente caida no tumba la respuesta", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+/* ------------------------------------------------------------ historial */
+await test("historial: se queda con el vuelo actual (desde el ultimo despegue)", () => {
+  const base = 1_790_000_000;
+  const trace = [
+    [0, 10, 10, 30000, 0, 0, 0],          // vuelo anterior
+    [600, 10.5, 10.5, "ground", 0, 0, 0], // aterrizo
+    [900, 10.5, 10.5, "ground", 0, 0, 2], // tramo nuevo
+    [1000, 10.5, 10.5, "ground", 0, 0, 0],// ultimo punto en pista
+    [1100, 10.6, 10.6, 3000, 0, 0, 0],
+    [2000, 11, 11, 35000, 0, 0, 1],       // hueco de señal antes de este
+  ];
+  const leg = currentLeg(trace, base);
+  assert.equal(leg.length, 3);
+  assert.deepEqual(leg[0], [(base + 1000) * 1000, 10.5, 10.5, 0, 1, 0]);
+  assert.equal(leg[2][5], 1);             // marcado como hueco
+});
+
+await test("historial: reduce a MAX_POINTS conservando el ultimo", () => {
+  const trace = Array.from({ length: 2000 }, (_, i) => [i * 5, 1 + i / 1e4, 1, 10000, 0, 0, 0]);
+  const leg = currentLeg(trace, 0);
+  assert.ok(leg.length <= 501);
+  assert.equal(leg[leg.length - 1][0], 1999 * 5 * 1000);
+});
+
+/* ---------------------------------------------------------------- tipos */
+await test("tipo de vuelo", () => {
+  assert.equal(kindOf({ flight: "LAN800", cat: "A5" }), "airline");
+  assert.equal(kindOf({ flight: "FDX5021" }), "cargo");
+  assert.equal(kindOf({ flight: "NJE812Q" }), "private");      // jet ejecutivo
+  assert.equal(kindOf({ flight: "CCABC", cat: "A1" }), "private"); // matricula
+  assert.equal(kindOf({ flight: "ABC123", cat: "A1" }), "private"); // avioneta con indicativo
+  assert.equal(kindOf({ flight: "RCH553", military: true }), "mil");
+  assert.equal(kindOf({ flight: "LAN800", cat: "A7" }), "heli");
+});
+
+/* --------------------------------------------------------------- rutas */
+await test("ruta: sobre la linea pero en sentido contrario no vale", () => {
+  const route = { origin: { lat: 51.47, lon: -0.45 }, destination: { lat: 2.74, lon: 101.7 } };   // LHR -> KUL
+  assert.equal(routeMatches(route, 49.25, 12.1, 115), true);    // rumbo al sureste: hacia KUL
+  assert.equal(routeMatches(route, 49.25, 12.1, 294), false);   // rumbo al noroeste: vuelve a Londres
+  assert.equal(routeMatches(route, 49.25, 12.1), true);         // sin rumbo: solo la posicion
+});
+
+/* ---------------------------------------------------------- compartir */
+await test("/vuelo/<hex>: vista previa con titulo, ruta validada y foto", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("/aircraft/")) return new Response(JSON.stringify({ response: { aircraft: { registration: "9V-SMA", type: "A350 941", manufacturer: "Airbus", registered_owner: "Singapore Airlines" } } }));
+    if (u.includes("/callsign/")) return new Response(JSON.stringify({ response: { flightroute: {
+      callsign: "SIA322", airline: { name: "Singapore Airlines" },
+      origin: { iata_code: "LHR", municipality: "London", name: "Heathrow", latitude: 51.47, longitude: -0.45 },
+      destination: { iata_code: "SIN", municipality: "Singapore", name: "Changi", latitude: 1.36, longitude: 103.99 } } } }));
+    if (u.includes("planespotters")) return new Response(JSON.stringify({ photos: [{ thumbnail_large: { src: "https://t.plnspttrs.net/1/x_280.jpg" }, link: "https://www.planespotters.net/photo/1", photographer: "Ana" }] }));
+    throw new Error("url inesperada " + u);
+  };
+  try {
+    const { default: handler } = await import("../api/share.js");
+    const res = htmlRes();
+    await handler({ query: { hex: "76cdb1", cs: "SIA322", lat: "48.0", lon: "16.0" }, headers: { host: "radar.test" } }, res);
+    assert.match(res.body, /<title>SIA322 en vivo · LHR → SIN · Radar de vuelos<\/title>/);
+    assert.match(res.body, /og:image" content="https:\/\/t\.plnspttrs\.net\/1\/x_280\.jpg"/);
+    assert.match(res.body, /og:url" content="https:\/\/radar\.test\/vuelo\/76cdb1\?lat=48\.0&amp;lon=16\.0&amp;cs=SIA322"/);
+    assert.equal((res.body.match(/og:title/g) || []).length, 1);   // reemplaza, no duplica
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+function htmlRes() {
+  return {
+    statusCode: 0, headers: {}, body: "",
+    setHeader(k, v) { this.headers[k.toLowerCase()] = v; },
+    end(b) { this.body = String(b); },
+  };
+}
 
 function fakeRes() {
   return {

@@ -20,12 +20,31 @@ const PORT = Number(process.env.PORT) || 3000;
 // Las MISMAS cabeceras de seguridad que Vercel aplica en produccion. Se leen de
 // vercel.json para que no se desincronicen: sin la CSP puesta aqui, en local
 // funcionaria codigo que en produccion el navegador bloquea.
-const SECURITY_HEADERS = await (async () => {
-  try {
-    const cfg = JSON.parse(await readFile(join(ROOT, "vercel.json"), "utf8"));
-    return cfg.headers?.[0]?.headers ?? [];
-  } catch { return []; }
+const CONFIG = await (async () => {
+  try { return JSON.parse(await readFile(join(ROOT, "vercel.json"), "utf8")); }
+  catch { return {}; }
 })();
+const SECURITY_HEADERS = CONFIG.headers?.[0]?.headers ?? [];
+
+// Los rewrites de vercel.json ("/vuelo/:hex" -> "/api/share?hex=:hex"), con
+// los parametros nombrados que usa Vercel. La query original se conserva.
+const REWRITES = (CONFIG.rewrites ?? []).map((r) => {
+  const names = [];
+  const rx = new RegExp("^" + r.source.replace(/:([a-z]+)/gi, (_, n) => { names.push(n); return "([^/]+)"; }) + "/?$");
+  return { rx, names, destination: r.destination };
+});
+function rewrite(url) {
+  for (const r of REWRITES) {
+    const m = url.pathname.match(r.rx);
+    if (!m) continue;
+    let dest = r.destination;
+    r.names.forEach((n, i) => { dest = dest.replaceAll(`:${n}`, encodeURIComponent(m[i + 1])); });
+    const next = new URL(dest, url);
+    for (const [k, v] of url.searchParams) if (!next.searchParams.has(k)) next.searchParams.set(k, v);
+    return next;
+  }
+  return url;
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -51,7 +70,7 @@ async function loadHandler(name) {
 }
 
 createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = rewrite(new URL(req.url, `http://${req.headers.host}`));
   const path = decodeURIComponent(url.pathname);
   for (const h of SECURITY_HEADERS) res.setHeader(h.key, h.value);
 

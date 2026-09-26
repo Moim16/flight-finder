@@ -6,6 +6,12 @@
 <meta name="theme-color" content="#070b12">
 <title>Radar de vuelos</title>
 <meta name="description" content="Aviones en tiempo real sobre el mapa: posicion, altitud, velocidad, ruta y foto.">
+<!--og-->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Radar de vuelos">
+<meta property="og:title" content="Radar de vuelos">
+<meta property="og:description" content="Aviones en tiempo real sobre el mapa: posicion, altitud, velocidad, ruta y foto.">
+<!--/og-->
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png">
@@ -42,6 +48,7 @@
   --ink:#0e1726; --muted:#56657a; --faint:#8794a6;
   --line:rgba(14,23,38,.12); --line-2:rgba(14,23,38,.2);
   --accent:#b36b00; --accent-ink:#ffffff; --accent-soft:rgba(179,107,0,.12);
+  --flown:#c26a00; --todo:#1f6fd1;
   --danger:#d0223f; --danger-soft:rgba(208,34,63,.12); --ok:#138a4c;
   --shadow:0 10px 30px rgba(14,23,38,.16);
   --blur:saturate(1.4) blur(14px);
@@ -57,6 +64,7 @@
     --ink:#e7edf5; --muted:#93a2b6; --faint:#5f6d82;
     --line:rgba(148,163,184,.14); --line-2:rgba(148,163,184,.26);
     --accent:#ffb020; --accent-ink:#1b1200; --accent-soft:rgba(255,176,32,.14);
+    --flown:#ffb020; --todo:#7cc4ff;
     --danger:#ff4d6a; --danger-soft:rgba(255,77,106,.16); --ok:#3ddc84;
     --shadow:0 14px 40px rgba(0,0,0,.5);
     color-scheme: dark;
@@ -67,6 +75,7 @@
   --ink:#e7edf5; --muted:#93a2b6; --faint:#5f6d82;
   --line:rgba(148,163,184,.14); --line-2:rgba(148,163,184,.26);
   --accent:#ffb020; --accent-ink:#1b1200; --accent-soft:rgba(255,176,32,.14);
+  --flown:#ffb020; --todo:#7cc4ff;
   --danger:#ff4d6a; --danger-soft:rgba(255,77,106,.16); --ok:#3ddc84;
   --shadow:0 14px 40px rgba(0,0,0,.5);
   color-scheme: dark;
@@ -136,6 +145,25 @@ button { cursor:pointer; }
 .icon-btn[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
 .icon-btn .count { font:500 13px/1 var(--mono); }
 
+/* filtros por tipo */
+.kinds {
+  position:fixed; z-index:18; left:16px; right:70px; top:calc(env(safe-area-inset-top, 0px) + 66px);
+  display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:2px 0 6px; pointer-events:none;
+}
+.kinds::-webkit-scrollbar { display:none; }
+.kind {
+  pointer-events:auto; flex:none; display:inline-flex; align-items:center; gap:7px;
+  height:34px; padding:0 12px; border-radius:999px; font-size:13.5px; font-weight:600; color:var(--muted);
+  background:var(--surface); border:1px solid var(--line);
+  -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur);
+}
+.kind:hover { color:var(--ink); border-color:var(--line-2); }
+.kind .n { font:500 12px/1 var(--mono); color:var(--faint); }
+.kind[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.kind[aria-pressed="true"] .n { color:inherit; opacity:.75; }
+.kind:disabled { opacity:.45; cursor:default; }
+.panel:not([hidden]) ~ .kinds { right:412px; }
+
 .popover {
   position:fixed; z-index:30; right:16px; top:calc(env(safe-area-inset-top, 0px) + 66px);
   width:min(300px, calc(100vw - 32px)); border-radius:var(--r); padding:8px;
@@ -194,9 +222,14 @@ button { cursor:pointer; }
 .route .end-b { text-align:right; }
 .route .end-b .city { margin-left:auto; }
 .track { position:relative; height:22px; }
-.track::before { content:""; position:absolute; left:0; right:0; top:50%; border-top:2px dashed var(--line-2); }
-.track .done { position:absolute; left:0; top:calc(50% - 1px); height:2px; background:var(--accent); }
-.track .plane { position:absolute; top:50%; width:20px; height:20px; margin:-10px 0 0 -10px; color:var(--accent); }
+.track::before { content:""; position:absolute; left:0; right:0; top:50%; margin-top:-1px; border-top:2px dashed var(--todo); }
+.track .done { position:absolute; left:0; top:calc(50% - 1.5px); height:3px; border-radius:2px; background:var(--flown); }
+.track .plane { position:absolute; top:50%; width:20px; height:20px; margin:-10px 0 0 -10px; color:var(--flown); }
+.route .key { display:flex; gap:14px; margin-top:8px; font-size:12px; color:var(--muted); }
+.route .key span { display:inline-flex; align-items:center; gap:6px; }
+.route .key i { display:inline-block; width:18px; }
+.route .key .k-flown { border-top:3px solid var(--flown); }
+.route .key .k-todo { border-top:2px dashed var(--todo); }
 .route .foot { display:flex; justify-content:space-between; gap:8px; margin-top:10px; font-size:12.5px; color:var(--muted); }
 .route.warn { background:transparent; border-style:dashed; color:var(--muted); font-size:13.5px; }
 .route.warn b { color:var(--ink); }
@@ -223,6 +256,8 @@ button { cursor:pointer; }
 }
 .btn svg { width:17px; height:17px; }
 .btn:hover { border-color:var(--ink); }
+.btn.wa { color:#1faa53; }
+.btn.wa:hover { border-color:#1faa53; }
 .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .btn.primary[aria-pressed="false"] { background:var(--solid); color:var(--ink); border-color:var(--line-2); }
 .fine { padding:0 20px 18px; color:var(--faint); font-size:12px; }
@@ -306,7 +341,7 @@ button { cursor:pointer; }
 .maplibregl-ctrl-bottom-right { bottom:calc(env(safe-area-inset-bottom, 0px) + 76px); right:6px; }
 .maplibregl-ctrl-attrib { background:var(--surface) !important; color:var(--muted); font-size:11px; }
 .maplibregl-ctrl-attrib a { color:var(--muted) !important; }
-.maplibregl-ctrl-top-right { top:calc(env(safe-area-inset-top, 0px) + 70px); right:6px; }
+.maplibregl-ctrl-top-right { top:calc(env(safe-area-inset-top, 0px) + 66px); right:6px; }
 
 /* ------------------------------------------------------------- telefono */
 @media (max-width: 760px) {
@@ -322,6 +357,8 @@ button { cursor:pointer; }
     animation:sheet-in .3s cubic-bezier(.2,.8,.2,1);
   }
   @keyframes sheet-in { from { transform:translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
+  .kinds { right:64px; }
+  .panel:not([hidden]) ~ .kinds { right:64px; }
   .grab { display:block; width:40px; height:4px; border-radius:2px; background:var(--line-2); margin:8px auto 0; }
   .hero h2 { font-size:34px; }
   .legend { display:none; }
@@ -380,6 +417,8 @@ button { cursor:pointer; }
     </button>
   </div>
 </header>
+
+<nav id="kinds" class="kinds" aria-label="Filtrar por tipo de vuelo"></nav>
 
 <div id="filters" class="popover glass" hidden>
   <h3>Mapa</h3>
@@ -470,6 +509,18 @@ const CATEGORY = {
   B1: "Planeador", B2: "Globo o dirigible", B3: "Paracaidista", B4: "Ultraligero",
   B6: "Dron", B7: "Vehiculo espacial",
 };
+// Tipo de vuelo. Lo clasifica el SERVIDOR (lib/kinds.js), para que la web y
+// la app movil digan lo mismo; aqui solo estan los nombres para mostrar.
+const KINDS = [
+  { id: "airline", name: "Comerciales", one: "Comercial" },
+  { id: "cargo", name: "Carga", one: "Carga" },
+  { id: "private", name: "Privados", one: "Privado" },
+  { id: "mil", name: "Militares", one: "Militar" },
+  { id: "heli", name: "Helicopteros", one: "Helicoptero" },
+];
+const kindOf = (a) => a.kind || "private";
+const kindName = (id) => KINDS.find((k) => k.id === id)?.one || "";
+
 const HEAVY_TYPES = /^(A3[3-5]\d|A38\d|B74\d|B76\d|B77\w|B78\w|IL96|A124|A225|MD11|C5M|C17)$/;
 
 /* ===========================================================================
@@ -477,7 +528,9 @@ const HEAVY_TYPES = /^(A3[3-5]\d|A38\d|B74\d|B76\d|B77\w|B78\w|IL96|A124|A225|MD
    =========================================================================== */
 const state = {
   planes: new Map(),        // hex -> avion (con recv y fixT para estimar)
-  trails: new Map(),        // hex -> [{lat, lon, alt, t}]
+  trails: new Map(),        // hex -> [{lat, lon, alt, t}] juntados en esta visita
+  history: new Map(),       // hex -> { at, points:[{t, lat, lon, alt, ground, gap}] } | "loading"
+  pendingTries: 0,
   selected: null,
   pendingHex: null,         // hex del enlace compartido, esperando que aparezca
   follow: false,
@@ -487,7 +540,7 @@ const state = {
   lastOk: 0,
   lastResp: null,
   error: null,
-  filters: { ground: false, labels: true, ring: false },
+  filters: { ground: false, labels: true, ring: false, kinds: [] },   // kinds vacio = todos
   themePref: "system",
 };
 
@@ -694,7 +747,9 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 function initialView() {
   const p = new URLSearchParams(location.search);
   const lat = Number(p.get("lat")), lon = Number(p.get("lon")), z = Number(p.get("z"));
-  if (p.has("hex")) state.pendingHex = p.get("hex").toLowerCase();
+  const fromPath = location.pathname.match(/^\/vuelo\/([0-9a-f]{6})\/?$/i);
+  if (fromPath) state.pendingHex = fromPath[1].toLowerCase();
+  else if (p.has("hex")) state.pendingHex = p.get("hex").toLowerCase();
   if (p.has("lat") && Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon, z: Number.isFinite(z) && z > 0 ? z : 8, fromUrl: true };
   try {
     const v = JSON.parse(localStorage.getItem("rv_view") || "null");
@@ -709,6 +764,8 @@ function setupLayers() {
   const accent = dark ? "#ffb020" : "#b36b00";
   const ink = dark ? "#e7edf5" : "#0e1726";
   const halo = dark ? "rgba(7,11,18,.9)" : "rgba(255,255,255,.95)";
+  const flown = cssVar("--flown") || accent;
+  const todo = cssVar("--todo") || "#7cc4ff";
 
   for (const id of ["ring", "route", "airports", "trail", "planes", "sel"]) {
     if (!map.getSource(id)) map.addSource(id, { type: "geojson", data: EMPTY_FC });
@@ -716,16 +773,19 @@ function setupLayers() {
 
   map.addLayer({ id: "ring", type: "line", source: "ring",
     paint: { "line-color": accent, "line-opacity": 0.55, "line-width": 1.5, "line-dasharray": [3, 3] } });
+  // Lo que falta: arco de circulo maximo hasta el destino, punteado.
   map.addLayer({ id: "route-line", type: "line", source: "route",
     layout: { "line-cap": "round" },
-    paint: {
-      "line-color": accent, "line-width": 2,
-      "line-opacity": ["case", ["==", ["get", "part"], "done"], 0.85, 0.5],
-      "line-dasharray": ["case", ["==", ["get", "part"], "done"], ["literal", [1, 0]], ["literal", [2, 2.5]]],
-    } });
-  map.addLayer({ id: "trail", type: "line", source: "trail",
+    paint: { "line-color": todo, "line-width": 2.5, "line-opacity": 0.85, "line-dasharray": [2, 2] } });
+  // Lo recorrido: la trayectoria REAL (historial + vivo), continua.
+  map.addLayer({ id: "trail", type: "line", source: "trail", filter: ["!=", ["get", "gap"], true],
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0.9 } });
+    paint: { "line-color": flown, "line-width": 3.5, "line-opacity": 0.95 } });
+  // Tramos sin señal (oceano, zonas sin antenas) o sin historial: mismo color
+  // de recorrido, pero punteado, porque ahi no se sabe el camino exacto.
+  map.addLayer({ id: "trail-gap", type: "line", source: "trail", filter: ["==", ["get", "gap"], true],
+    layout: { "line-cap": "round" },
+    paint: { "line-color": flown, "line-width": 2.5, "line-opacity": 0.7, "line-dasharray": [0.5, 2] } });
   map.addLayer({ id: "sel-halo", type: "circle", source: "sel",
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 14, 10, 22],
@@ -757,11 +817,12 @@ function setupLayers() {
       "text-optional": true, "text-padding": 4, "symbol-sort-key": ["get", "z"],
     },
     paint: { "text-color": ink, "text-halo-color": halo, "text-halo-width": 1.6 } });
+  const endColor = ["case", ["==", ["get", "role"], "origin"], flown, todo];
   map.addLayer({ id: "airports", type: "circle", source: "airports",
-    paint: { "circle-radius": 5, "circle-color": halo, "circle-stroke-color": accent, "circle-stroke-width": 2.5 } });
+    paint: { "circle-radius": 5.5, "circle-color": halo, "circle-stroke-color": endColor, "circle-stroke-width": 3 } });
   map.addLayer({ id: "airport-labels", type: "symbol", source: "airports",
     layout: { "text-field": ["get", "code"], "text-font": MAP_FONT, "text-size": 13, "text-offset": [0, 1.1], "text-anchor": "top", "text-allow-overlap": true },
-    paint: { "text-color": accent, "text-halo-color": halo, "text-halo-width": 2 } });
+    paint: { "text-color": endColor, "text-halo-color": halo, "text-halo-width": 2 } });
 
   renderPlanes();
   renderSelectionOverlays();
@@ -790,6 +851,8 @@ function initMap() {
   }), "bottom-right");
 
   map.on("style.load", setupLayers);
+  // Los creditos del mapa arrancan plegados: en el telefono tapaban el mapa.
+  map.once("load", () => document.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
   map.on("error", (e) => console.warn("[mapa]", e?.error?.message || e));
   map.on("moveend", onMoveEnd);
   map.on("dragstart", () => { if (state.follow) { state.follow = false; renderPanel(); } });
@@ -898,10 +961,20 @@ function ingest(data, wantNm) {
     const hex = state.pendingHex;
     state.pendingHex = null;
     select(hex, { fly: false });
+  } else if (state.pendingHex && ++state.pendingTries >= 2) {
+    // Dos respuestas sin el avion: aterrizo, salio de la zona o dejo de
+    // transmitir desde que se compartio el enlace.
+    state.pendingHex = null;
+    toast("Ese avion ya no aparece en esta zona. Puede haber aterrizado o salido de la cobertura.");
   }
 
   $("countBtn").textContent = String(visiblePlanes().length);
+  renderKinds();
   $("empty").hidden = !(data.aircraft.length === 0 && data.sources.some((s) => s.ok));
+  if (data.aircraft.length && !visiblePlanes().length && state.filters.kinds.length && !ingest._warned) {
+    ingest._warned = true;
+    toast("Hay vuelos en la zona, pero ninguno del tipo elegido.");
+  }
   renderRing();
   renderPlanes();
   if (state.panelMode === "list") renderList();
@@ -911,7 +984,9 @@ function ingest(data, wantNm) {
 function visiblePlanes() {
   const out = [];
   for (const a of state.planes.values()) {
-    if (state.filters.ground && a.ground && a.hex !== state.selected) continue;
+    if (a.hex === state.selected) { out.push(a); continue; }
+    if (state.filters.ground && a.ground) continue;
+    if (state.filters.kinds.length && !state.filters.kinds.includes(kindOf(a))) continue;
     out.push(a);
   }
   return out;
@@ -930,7 +1005,7 @@ function saveView() {
   try { localStorage.setItem("rv_view", JSON.stringify(v)); } catch {}
   const q = new URLSearchParams({ lat: v.lat, lon: v.lon, z: v.z });
   if (state.selected) q.set("hex", state.selected);
-  history.replaceState(null, "", `?${q}`);
+  history.replaceState(null, "", `/?${q}`);
 }
 
 /* ===========================================================================
@@ -973,27 +1048,34 @@ function renderSelectionOverlays() {
   const [lat, lon] = livePos(a, now);
   map.getSource("sel").setData({ type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: {} }] });
 
-  // Estela: un tramo por par de posiciones, coloreado por la altitud.
-  const pts = [...(state.trails.get(a.hex) || []), { lat, lon, alt: a.alt, ground: a.ground }];
+  const det = state.details.get(detailKey(a));
+  const route = det && det !== "loading" ? checkedRoute(det.route, a) : null;
+  const o = route?.ok ? route.route.origin : null;
+  const d = route?.ok ? route.route.destination : null;
+
+  // Recorrido: un tramo por par de posiciones reales. Los huecos de señal van
+  // punteados. Si el historial no llega hasta el aeropuerto de origen (no
+  // habia antenas en el despegue), ese pedazo se completa punteado tambien.
+  const pts = [...flightPath(a), { lat, lon, alt: a.alt, ground: a.ground, t: now }];
   const segs = [];
+  const line = (coords, gap) => ({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { gap } });
+  if (o && distKm(o.lat, o.lon, pts[0].lat, pts[0].lon) > 25) {
+    segs.push(line(greatCircle([o.lat, o.lon], [pts[0].lat, pts[0].lon], 48), true));
+  }
   for (let i = 1; i < pts.length; i++) {
     const p0 = pts[i - 1], p1 = pts[i];
     let lon0 = p0.lon, lon1 = p1.lon;
     if (lon1 - lon0 > 180) lon1 -= 360; else if (lon0 - lon1 > 180) lon1 += 360;
-    segs.push({ type: "Feature", geometry: { type: "LineString", coordinates: [[lon0, p0.lat], [lon1, p1.lat]] }, properties: { color: altColor({ alt: p1.alt, ground: p1.ground }) } });
+    segs.push(line([[lon0, p0.lat], [lon1, p1.lat]], !!p1.gap));
   }
   map.getSource("trail").setData({ type: "FeatureCollection", features: segs });
 
-  const det = state.details.get(detailKey(a));
-  const route = det && det !== "loading" ? checkedRoute(det.route, a) : null;
-  if (route?.ok) {
-    const o = route.route.origin, d = route.route.destination;
+  if (d) {
     map.getSource("route").setData({ type: "FeatureCollection", features: [
-      { type: "Feature", geometry: { type: "LineString", coordinates: greatCircle([o.lat, o.lon], [lat, lon], 48) }, properties: { part: "done" } },
-      { type: "Feature", geometry: { type: "LineString", coordinates: greatCircle([lat, lon], [d.lat, d.lon], 48) }, properties: { part: "todo" } },
+      line(greatCircle([lat, lon], [d.lat, d.lon], 64), false),
     ] });
-    map.getSource("airports").setData({ type: "FeatureCollection", features: [o, d].map((p) => ({
-      type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] }, properties: { code: p.iata || p.icao || "" },
+    map.getSource("airports").setData({ type: "FeatureCollection", features: [[o, "origin"], [d, "dest"]].map(([p, role]) => ({
+      type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] }, properties: { code: p.iata || p.icao || "", role },
     })) });
   } else {
     map.getSource("route").setData(EMPTY_FC);
@@ -1035,6 +1117,45 @@ function tick() {
 }
 
 /* ===========================================================================
+   Historial del vuelo
+   =========================================================================== */
+const TRACE_TTL_MS = 60000;
+const GAP_MS = 300000;
+
+// El recorrido completo: lo que trae /api/trace desde el despegue, seguido de
+// las posiciones que se fueron juntando en vivo desde entonces.
+function flightPath(a) {
+  const live = state.trails.get(a.hex) || [];
+  const h = state.history.get(a.hex);
+  const hist = h && h !== "loading" ? h.points : [];
+  const cut = live.length ? live[0].t - 1000 : Infinity;
+  const out = hist.filter((p) => p.t < cut);
+  for (const p of live) {
+    const prev = out[out.length - 1];
+    out.push({ ...p, gap: !!prev && p.t - prev.t > GAP_MS });
+  }
+  return out;
+}
+
+async function loadTrace(a) {
+  const h = state.history.get(a.hex);
+  if (h === "loading" || (h && Date.now() - h.at < TRACE_TTL_MS)) return;
+  state.history.set(a.hex, "loading");
+  try {
+    const r = await fetch(`/api/trace?hex=${a.hex}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const points = d.points.map(([t, lat, lon, alt, ground, gap]) => ({ t, lat, lon, alt, ground: !!ground, gap: !!gap }));
+    state.history.set(a.hex, { at: Date.now(), points });
+  } catch (err) {
+    console.warn("[historial]", err);
+    state.history.delete(a.hex);
+    return;
+  }
+  if (state.selected === a.hex) { renderSelectionOverlays(); if (state.panelMode === "detail") renderPanel(); }
+}
+
+/* ===========================================================================
    Seleccion y detalle
    =========================================================================== */
 const detailKey = (a) => `${a.hex}|${callsignOf(a)}`;
@@ -1046,6 +1167,7 @@ function select(hex, { fly = false } = {}) {
   state.panelMode = "detail";
   state.follow = false;
   loadDetails(a);
+  loadTrace(a);
   renderPanel();
   renderPlanes();
   renderSelectionOverlays();
@@ -1078,8 +1200,16 @@ function checkedRoute(route, a) {
   if (!route) return null;
   const fit = routeFit(route.origin, route.destination, a.lat, a.lon);
   const tolerance = Math.max(150, fit.total * 0.15);
-  const ok = fit.offKm <= tolerance && fit.progress > -0.08 && fit.progress < 1.08;
-  return { ok, route, fit };
+  // Ademas de estar sobre la linea, tiene que ir HACIA el destino: el mismo
+  // numero de vuelo a veces se usa para la ida y la vuelta.
+  let wrongWay = false;
+  if (!a.ground && a.track != null && (a.gs ?? 0) > 60 && fit.progress < 0.98) {
+    const toDest = bearing(a.lat, a.lon, route.destination.lat, route.destination.lon);
+    const diff = Math.abs(((a.track - toDest + 540) % 360) - 180);
+    wrongWay = diff > 90;
+  }
+  const ok = !wrongWay && fit.offKm <= tolerance && fit.progress > -0.08 && fit.progress < 1.08;
+  return { ok, route, fit, wrongWay };
 }
 
 function closePanel() {
@@ -1100,6 +1230,7 @@ const ICON = {
   center: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/><circle cx="12" cy="12" r="2"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
   out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>',
+  wa: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.8 11.9 11.9 0 0 0 4.6 4c1.7.7 2.4.8 3.2.7a2.8 2.8 0 0 0 1.8-1.3 2.3 2.3 0 0 0 .2-1.3c-.1-.1-.2-.2-.5-.3z"/></svg>',
   plane: '<svg viewBox="0 0 64 64" fill="currentColor"><path d="M32 4C34 4 35 7 35 10L35 24L58 36L58 40L35 34L35 50L42 56L42 59L32 56L22 59L22 56L29 50L29 34L6 40L6 36L29 24L29 10C29 7 30 4 32 4Z"/></svg>',
 };
 
@@ -1123,7 +1254,7 @@ function renderPanel() {
   if (a.emergency) badges.push(`<span class="badge danger">${esc(a.emergency)} · ${esc(a.squawk || "")}</span>`);
   badges.push(`<span class="badge alt" style="background:${altColor({ alt: a.alt, ground: a.ground })}">${esc(flightLevel(a))}</span>`);
   if (a.type || ac?.icaoType) badges.push(`<span class="badge">${esc(a.type || ac.icaoType)}</span>`);
-  if (a.military) badges.push(`<span class="badge mil">Militar</span>`);
+  badges.push(`<span class="badge${kindOf(a) === "mil" ? " mil" : ""}">${esc(kindName(kindOf(a)))}</span>`);
   const lost = ageOf(a, now) > LOST_S;
   if (lost) badges.push(`<span class="badge">Sin señal</span>`);
 
@@ -1142,11 +1273,14 @@ function renderPanel() {
           </div>
           <div class="end-b"><div class="code">${esc(d.iata || d.icao)}</div><div class="city">${esc(d.city || d.name)}</div></div>
         </div>
-        <div class="foot num"><span>${Math.round(pct * 100)}% del trayecto</span><span>Faltan ${nf0.format(left)} km</span></div>
+        <div class="foot num"><span>${Math.round(pct * 100)}% del trayecto · ${nf0.format(Math.max(0, chk.fit.along))} km</span><span>Faltan ${nf0.format(left)} km</span></div>
+        <div class="key"><span><i class="k-flown"></i>Recorrido</span><span><i class="k-todo"></i>Por recorrer</span></div>
       </div>`;
   } else if (chk && !chk.ok) {
     const o = chk.route.origin, d = chk.route.destination;
-    routeHtml = `<div class="route warn">La ruta publicada para <b>${esc(cs)}</b> es <b>${esc(o.iata || o.icao)} → ${esc(d.iata || d.icao)}</b>, pero el avion no esta sobre ese trayecto. Suele pasar con vuelos de varios tramos que comparten numero, asi que no se muestra en el mapa.</div>`;
+    routeHtml = chk.wrongWay
+      ? `<div class="route warn">La ruta publicada para <b>${esc(cs)}</b> es <b>${esc(o.iata || o.icao)} → ${esc(d.iata || d.icao)}</b>, pero el avion va en sentido contrario: probablemente es el vuelo de vuelta con el mismo numero. No se muestra en el mapa.</div>`
+      : `<div class="route warn">La ruta publicada para <b>${esc(cs)}</b> es <b>${esc(o.iata || o.icao)} → ${esc(d.iata || d.icao)}</b>, pero el avion no esta sobre ese trayecto. Suele pasar con vuelos de varios tramos que comparten numero, asi que no se muestra en el mapa.</div>`;
   } else if (det === "loading" && cs) {
     routeHtml = `<div class="route warn">Buscando la ruta de ${esc(cs)}…</div>`;
   }
@@ -1161,7 +1295,8 @@ function renderPanel() {
 
   const reg = a.reg || ac?.registration;
   const owner = ac?.owner || a.owner;
-  const trail = state.trails.get(a.hex) || [];
+  const path = flightPath(a);
+  const traceLoading = state.history.get(a.hex) === "loading";
 
   panel.innerHTML = `
     <div class="grab" aria-hidden="true"></div>
@@ -1187,7 +1322,7 @@ function renderPanel() {
         <div class="cell"><div class="l">Ultima señal</div><div class="v text" data-live="seen"></div></div>
         <div class="cell wide"><div class="l">Posicion</div><div class="v" data-live="pos"></div></div>
       </div>
-      ${trail.length >= 3 ? `<div class="section-title">Perfil de altitud</div><div class="profile" data-live="profile"></div>` : ""}
+      ${path.length >= 3 ? `<div class="section-title">Perfil de altitud</div><div class="profile" data-live="profile"></div>` : traceLoading ? `<div class="section-title">Perfil de altitud</div><div class="profile"><div class="axis">Cargando el recorrido…</div></div>` : ""}
       <div class="section-title">Aeronave</div>
       <div class="grid">
         <div class="cell"><div class="l">Matricula</div><div class="v">${esc(reg || "—")}</div></div>
@@ -1200,7 +1335,8 @@ function renderPanel() {
       <div class="actions">
         <button class="btn primary" type="button" data-act="follow" aria-pressed="${state.follow}">${ICON.follow}${state.follow ? "Siguiendo" : "Seguir"}</button>
         <button class="btn" type="button" data-act="center">${ICON.center}Centrar</button>
-        <button class="btn" type="button" data-act="share">${ICON.link}Copiar enlace</button>
+        <button class="btn wa" type="button" data-act="whatsapp">${ICON.wa}WhatsApp</button>
+        <button class="btn" type="button" data-act="share">${ICON.link}${navigator.share ? "Compartir" : "Copiar enlace"}</button>
         <a class="btn" href="https://adsb.lol/?icao=${esc(a.hex)}" target="_blank" rel="noopener">${ICON.out}Historial</a>
       </div>
       <p class="fine">Posicion estimada entre actualizaciones a partir de la velocidad y el rumbo. Datos de receptores ADS-B voluntarios: pueden tener huecos o retraso.</p>
@@ -1232,11 +1368,11 @@ function updateLiveCells(a) {
   const c = map.getCenter();
   set("pos", `${lat.toFixed(4)}, ${lon.toFixed(4)} <small>· a ${nf0.format(distKm(c.lat, c.lng, lat, lon))} km del centro del mapa</small>`);
   const prof = panel.querySelector('[data-live="profile"]');
-  if (prof) set("profile", profileSvg(state.trails.get(a.hex) || []));
+  if (prof) set("profile", profileSvg(flightPath(a)));
 }
 
 function profileSvg(trail) {
-  const pts = trail.filter((p) => p.alt != null);
+  const pts = trail.filter((p) => p.alt != null || p.ground).map((p) => (p.ground ? { ...p, alt: 0 } : p));
   if (pts.length < 2) return "";
   const W = 320, H = 64, pad = 4;
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
@@ -1248,13 +1384,47 @@ function profileSvg(trail) {
   const last = pts[pts.length - 1];
   const color = altColor(last);
   const mins = Math.max(1, Math.round((t1 - t0) / 60000));
+  const span = mins >= 90 ? `hace ${nf1.format(mins / 60)} h` : `hace ${mins} min`;
+  const startsOnGround = pts[0].ground || pts[0].alt < 1500;
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Altitud en los ultimos ${mins} minutos">
       <line x1="${pad}" x2="${W - pad}" y1="${y(maxAlt / 2)}" y2="${y(maxAlt / 2)}" stroke="var(--line)" stroke-dasharray="3 3"/>
       <path d="${area}" fill="${color}" fill-opacity=".18"/>
       <path d="${line}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>
       <circle cx="${x(last.t)}" cy="${y(last.alt)}" r="3.5" fill="${color}"/>
     </svg>
-    <div class="axis"><span>hace ${mins} min</span><span>max ${nf0.format(maxAlt)} ft</span><span>ahora</span></div>`;
+    <div class="axis"><span>${startsOnGround ? "despegue · " : ""}${span}</span><span>max ${nf0.format(maxAlt)} ft</span><span>ahora</span></div>`;
+}
+
+// Enlace a ESTE avion: /vuelo/<hex> centrado donde esta ahora. El servidor
+// arma con eso la vista previa que muestra WhatsApp (titulo, ruta y foto).
+function shareUrl(a) {
+  const [lat, lon] = livePos(a, Date.now());
+  const q = new URLSearchParams({ lat: lat.toFixed(3), lon: lon.toFixed(3), z: "8" });
+  if (callsignOf(a)) q.set("cs", callsignOf(a));
+  if (a.track != null && !a.ground) q.set("trk", String(Math.round(a.track)));
+  return `${location.origin}/vuelo/${a.hex}?${q}`;
+}
+function shareText(a, { withUrl = true } = {}) {
+  const det = state.details.get(detailKey(a));
+  const info = det && det !== "loading" ? det : null;
+  const chk = info ? checkedRoute(info.route, a) : null;
+  const ac = info?.aircraft;
+  const model = a.desc || (ac ? [ac.manufacturer, ac.type].filter(Boolean).join(" ") : null);
+  const who = (chk?.ok && chk.route.airline?.name) || ac?.owner || a.owner;
+  const lines = [`✈️ ${labelOf(a)} en vivo`];
+  const l2 = [who, model].filter(Boolean).join(" · ");
+  if (l2) lines.push(l2);
+  if (chk?.ok) {
+    const o = chk.route.origin, d = chk.route.destination;
+    const pct = Math.round(Math.max(0, Math.min(1, chk.fit.progress)) * 100);
+    lines.push(`${o.iata || o.icao} → ${d.iata || d.icao} (${o.city || o.name} a ${d.city || d.name}) · ${pct}% del trayecto`);
+  }
+  const now = [a.ground ? "En tierra" : flightLevel(a)];
+  if (a.gs != null && !a.ground) now.push(`${nf0.format(a.gs * KM_PER_NM)} km/h`);
+  if (a.track != null && !a.ground) now.push(`rumbo ${nf0.format(a.track)}° ${cardinal(a.track)}`);
+  lines.push(now.join(" · "));
+  if (withUrl) lines.push("", shareUrl(a));
+  return lines.join("\n");
 }
 
 $("panel").addEventListener("click", async (e) => {
@@ -1274,10 +1444,21 @@ $("panel").addEventListener("click", async (e) => {
     case "center":
       if (a) { const [lat, lon] = livePos(a, Date.now()); map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 9), essential: true }); }
       break;
-    case "share":
-      try { await navigator.clipboard.writeText(location.href); toast("Enlace copiado"); }
-      catch { toast("No se pudo copiar. Copia la direccion del navegador."); }
+    case "whatsapp":
+      if (a) window.open(`https://wa.me/?text=${encodeURIComponent(shareText(a))}`, "_blank", "noopener");
       break;
+    case "share": {
+      if (!a) break;
+      const url = shareUrl(a);
+      if (navigator.share) {
+        try { await navigator.share({ title: `${labelOf(a)} en vivo`, text: shareText(a, { withUrl: false }), url }); }
+        catch (err) { if (err.name !== "AbortError") toast("No se pudo compartir."); }
+        break;
+      }
+      try { await navigator.clipboard.writeText(url); toast("Enlace copiado"); }
+      catch { toast("No se pudo copiar el enlace."); }
+      break;
+    }
   }
 });
 
@@ -1330,7 +1511,7 @@ function renderList() {
         ${shown.map(({ a, d }) => `
           <li class="row ${a.emergency ? "emerg" : ""}" data-hex="${esc(a.hex)}" tabindex="0">
             <span class="dot" style="background:${altColor(a)}"></span>
-            <span style="min-width:0"><div class="t">${esc(labelOf(a))}</div><div class="d">${esc([a.type, a.reg && a.reg !== labelOf(a) ? a.reg : null, a.emergency].filter(Boolean).join(" · ") || "Sin datos del avion")}</div></span>
+            <span style="min-width:0"><div class="t">${esc(labelOf(a))}</div><div class="d">${esc([kindName(kindOf(a)), a.type, a.reg && a.reg !== labelOf(a) ? a.reg : null, a.emergency].filter(Boolean).join(" · "))}</div></span>
             <span class="m">${esc(flightLevel(a))}<small>${a.gs != null ? nf0.format(a.gs) + " kt" : "—"} · ${nf0.format(d)} km</small></span>
           </li>`).join("")}
       </ul>
@@ -1344,6 +1525,45 @@ $("panel").addEventListener("keydown", (e) => {
   const row = e.target.closest(".row");
   if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click(); }
 });
+
+/* ===========================================================================
+   Filtro por tipo de vuelo
+   =========================================================================== */
+function renderKinds() {
+  const counts = Object.fromEntries(KINDS.map((k) => [k.id, 0]));
+  for (const a of state.planes.values()) {
+    if (state.filters.ground && a.ground) continue;
+    counts[kindOf(a)]++;
+  }
+  const sel = state.filters.kinds;
+  const html = `<button class="kind" type="button" data-kind="" aria-pressed="${!sel.length}">Todos</button>` +
+    KINDS.map((k) => `<button class="kind" type="button" data-kind="${k.id}" aria-pressed="${sel.includes(k.id)}"${!counts[k.id] && !sel.includes(k.id) ? " disabled" : ""}>${k.name}<span class="n">${counts[k.id]}</span></button>`).join("");
+  const nav = $("kinds");
+  if (nav._html !== html) { nav.innerHTML = html; nav._html = html; }
+}
+$("kinds").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-kind]");
+  if (!b) return;
+  const id = b.dataset.kind;
+  let sel = state.filters.kinds;
+  if (!id) sel = [];
+  else sel = sel.includes(id) ? sel.filter((k) => k !== id) : [...sel, id];
+  // Marcar todos los tipos es lo mismo que no filtrar.
+  if (sel.length === KINDS.length) sel = [];
+  state.filters.kinds = sel;
+  saveFilters();
+  applyFilters();
+});
+
+// Todo lo que depende de los filtros se vuelve a pintar junto.
+function applyFilters() {
+  ingest._warned = false;
+  renderKinds();
+  renderPlanes();
+  $("countBtn").textContent = String(visiblePlanes().length);
+  renderStatus();
+  if (state.panelMode === "list") renderList();
+}
 
 /* ===========================================================================
    Estado inferior
@@ -1360,7 +1580,8 @@ function renderStatus() {
     const n = visiblePlanes().length;
     const capped = r.wantNm > MAX_RADIUS_NM;
     const okSources = r.sources.filter((s) => s.ok).map((s) => s.name);
-    txt.innerHTML = `<b class="num">${nf0.format(n)}</b> ${n === 1 ? "vuelo" : "vuelos"} · ${capped ? `${MAX_RADIUS_NM} NM alrededor del centro` : "en la vista"} · ${esc(ago((Date.now() - state.lastOk) / 1000))}`;
+    const kinds = state.filters.kinds.length ? " " + state.filters.kinds.map((k) => KINDS.find((x) => x.id === k).name.toLowerCase()).join(" y ") : "";
+    txt.innerHTML = `<b class="num">${nf0.format(n)}</b> ${n === 1 ? "vuelo" : "vuelos"}${esc(kinds)} · ${capped ? `${MAX_RADIUS_NM} NM alrededor del centro` : "en la vista"} · ${esc(ago((Date.now() - state.lastOk) / 1000))}`;
     box.title = `Fuentes: ${r.sources.map((s) => `${s.name} ${s.ok ? s.count : "sin respuesta"}`).join(", ")}`;
     if (!okSources.length) txt.textContent = "Ninguna fuente respondio.";
   }
@@ -1524,10 +1745,7 @@ for (const [id, key] of [["fGround", "ground"], ["fLabels", "labels"], ["fRing",
     saveFilters();
     if (key === "labels" && map.getLayer("plane-labels")) map.setLayoutProperty("plane-labels", "visibility", el.checked ? "visible" : "none");
     if (key === "ring") renderRing();
-    renderPlanes();
-    $("countBtn").textContent = String(visiblePlanes().length);
-    renderStatus();
-    if (state.panelMode === "list") renderList();
+    applyFilters();
   });
 }
 
@@ -1556,6 +1774,7 @@ $("legendTicks").innerHTML = `<span></span>` + ALT_STEPS.map((s) => `<span>${s.t
    Arranque
    =========================================================================== */
 applyTheme(state.themePref);
+renderKinds();
 initMap();
 map.once("load", refresh);
 setInterval(tick, TICK_MS);

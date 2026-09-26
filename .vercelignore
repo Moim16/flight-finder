@@ -1,0 +1,5 @@
+# Nunca subir las credenciales: en Vercel van en Settings -> Environment Variables.
+.env
+.env.*
+!.env.example
+node_modules

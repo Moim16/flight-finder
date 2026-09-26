@@ -197,11 +197,20 @@ await test("/vuelo/<hex>: vista previa con titulo, ruta validada y foto", async 
   try {
     const { default: handler } = await import("../api/share.js");
     const res = htmlRes();
-    await handler({ query: { hex: "76cdb1", cs: "SIA322", lat: "48.0", lon: "16.0" }, headers: { host: "radar.test" } }, res);
+    await handler({ query: { hex: "76cdb1", cs: "SIA322", lat: "48.0", lon: "16.0" }, headers: { host: "radar.test", "user-agent": "WhatsApp/2.24" } }, res);
     assert.match(res.body, /<title>SIA322 en vivo · LHR → SIN · Radar de vuelos<\/title>/);
     assert.match(res.body, /og:image" content="https:\/\/t\.plnspttrs\.net\/1\/x_280\.jpg"/);
     assert.match(res.body, /og:url" content="https:\/\/radar\.test\/vuelo\/76cdb1\?lat=48\.0&amp;lon=16\.0&amp;cs=SIA322"/);
     assert.equal((res.body.match(/og:title/g) || []).length, 1);   // reemplaza, no duplica
+
+    // Una persona (navegador) recibe la pagina al instante, sin consultar nada.
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error("no deberia consultar"); };
+    const res2 = htmlRes();
+    await handler({ query: { hex: "76cdb1", cs: "SIA322" }, headers: { host: "radar.test", "user-agent": "Mozilla/5.0 (Linux; Android 15) Chrome/140" } }, res2);
+    assert.equal(calls, 0);
+    assert.match(res2.body, /<title>Radar de vuelos<\/title>/);
+    assert.equal(res2.headers["cache-control"], "no-store");
   } finally {
     globalThis.fetch = realFetch;
   }

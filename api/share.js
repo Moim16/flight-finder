@@ -9,6 +9,10 @@
 //  vista previa del enlace. Asi el chat muestra "QFA255 en vivo · SIN → LHR"
 //  con la foto del avion en vez de un enlace pelado. Al abrirlo, la pagina lee
 //  el hex de la ruta y selecciona el avion.
+//
+//  Armar esa vista previa exige consultar la ruta y la foto (varios segundos).
+//  Solo la necesitan los robots de las apps de mensajeria y redes; a una
+//  PERSONA se le entrega la pagina al instante, y la pagina busca el resto.
 // =============================================================================
 
 import { readFile } from "node:fs/promises";
@@ -23,18 +27,24 @@ async function page() {
   return template;
 }
 
+// Los que arman vistas previas de enlaces (no ejecutan JavaScript).
+const PREVIEW_BOTS = /whatsapp|facebookexternalhit|facebot|twitterbot|telegrambot|slackbot|linkedinbot|discordbot|skypeuripreview|applebot|googlebot|bingbot|pinterest|redditbot|embedly|vkshare|viber|signal|iframely/i;
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 export default async function handler(req, res) {
   const html = await page();
   const hex = (req.query.hex || "").toString().toLowerCase();
-  const send = (body) => {
+  const send = (body, cacheable = true) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
-    res.setHeader("cache-control", "public, max-age=0, s-maxage=300, stale-while-revalidate=3600");
+    // La version para personas no se guarda en la CDN: asi un robot nunca
+    // recibe la pagina sin vista previa. La de los robots si (5 min).
+    res.setHeader("cache-control", cacheable ? "public, max-age=0, s-maxage=300, stale-while-revalidate=3600" : "no-store");
     res.statusCode = 200;
     res.end(body);
   };
   if (!HEX.test(hex)) return send(html);
+  if (!PREVIEW_BOTS.test(String(req.headers["user-agent"] || ""))) return send(html, false);
 
   const cs = (req.query.cs || "").toString().toUpperCase().trim();
   const lat = num(req.query.lat, -90, 90);

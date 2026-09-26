@@ -329,6 +329,17 @@ button { cursor:pointer; }
 .chip { border:1px solid var(--line-2); background:var(--solid); border-radius:999px; padding:7px 13px; font-size:13.5px; font-weight:500; }
 .chip:hover { border-color:var(--accent); color:var(--accent); }
 
+/* Al abrir un enlace compartido: se busca ESE avion en la zona */
+.finding {
+  position:fixed; z-index:22; left:50%; top:calc(env(safe-area-inset-top, 0px) + 116px); transform:translateX(-50%);
+  display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:14px;
+  width:max-content; max-width:calc(100vw - 32px);
+}
+.finding b { display:block; font:700 17px/1.2 var(--cond); letter-spacing:.02em; }
+.finding span:not(.spinner) { display:block; font-size:13px; color:var(--muted); }
+.spinner { width:20px; height:20px; flex:none; border-radius:50%; border:2.5px solid var(--line-2); border-top-color:var(--accent); animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
 .tip {
   position:fixed; z-index:25; pointer-events:none; padding:7px 10px; border-radius:10px; font-size:12.5px;
   transform:translate(14px, 14px); white-space:nowrap;
@@ -460,6 +471,11 @@ button { cursor:pointer; }
   <h3>Ningun avion reportado aqui</h3>
   <p>Las posiciones vienen de receptores ADS-B voluntarios. Donde no hay antenas cerca no llega la señal, aunque haya vuelos. Prueba alejando el mapa o salta a una zona con mucho trafico:</p>
   <div class="chips" id="jumps"></div>
+</div>
+
+<div id="finding" class="finding glass" hidden role="status" aria-live="polite">
+  <span class="spinner" aria-hidden="true"></span>
+  <div><b id="findingTitle">Buscando el vuelo…</b><span id="findingSub">Cargando las posiciones de la zona</span></div>
 </div>
 
 <div id="tip" class="tip glass" hidden></div>
@@ -655,11 +671,11 @@ function ago(s) {
   const m = Math.round(s / 60);
   return m < 60 ? `hace ${m} min` : `hace ${Math.round(m / 60)} h`;
 }
-function toast(msg) {
+function toast(msg, ms = 2400) {
   const t = $("toast");
   t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { t.hidden = true; }, 2400);
+  toast._t = setTimeout(() => { t.hidden = true; }, ms);
 }
 function saveFilters() { try { localStorage.setItem("rv_filters", JSON.stringify(state.filters)); } catch {} }
 
@@ -754,12 +770,20 @@ function addIcons() {
 let map = null;
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
+function showFinding(label) {
+  $("findingTitle").textContent = `Buscando el vuelo ${label}…`;
+  $("findingSub").textContent = "Cargando las posiciones de la zona";
+  $("finding").hidden = false;
+}
+function hideFinding() { $("finding").hidden = true; }
+
 function initialView() {
   const p = new URLSearchParams(location.search);
   const lat = Number(p.get("lat")), lon = Number(p.get("lon")), z = Number(p.get("z"));
   const fromPath = location.pathname.match(/^\/vuelo\/([0-9a-f]{6})\/?$/i);
   if (fromPath) state.pendingHex = fromPath[1].toLowerCase();
   else if (p.has("hex")) state.pendingHex = p.get("hex").toLowerCase();
+  if (state.pendingHex) showFinding(p.get("cs") || state.pendingHex.toUpperCase());
   if (p.has("lat") && Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon, z: Number.isFinite(z) && z > 0 ? z : 8, fromUrl: true };
   try {
     const v = JSON.parse(localStorage.getItem("rv_view") || "null");
@@ -932,6 +956,7 @@ async function refresh() {
       ? "Abriste el archivo directo. Corre npm run dev y entra a http://localhost:3000"
       : navigator.onLine === false ? "Sin conexion. Reintento cuando vuelva la red." : "No se pudo actualizar. Reintento en unos segundos.";
     console.warn("[vuelos]", err);
+    if (state.pendingHex) $("findingSub").textContent = "No se pudo conectar. Reintentando…";
   } finally {
     if (inflight === ctrl) inflight = null;
     if (!ctrl.signal.aborted) {
@@ -998,12 +1023,18 @@ function ingest(data) {
   if (state.pendingHex && next.has(state.pendingHex)) {
     const hex = state.pendingHex;
     state.pendingHex = null;
+    hideFinding();
     select(hex, { fly: false });
+  } else if (state.pendingHex && state.pendingTries === 0) {
+    // Primera respuesta sin el avion: se dice en que va, y se espera otra.
+    state.pendingTries++;
+    $("findingSub").textContent = "Todavía no aparece en esta zona. Reintentando…";
   } else if (state.pendingHex && ++state.pendingTries >= 2) {
+    hideFinding();
     // Dos respuestas sin el avion: aterrizo, salio de la zona o dejo de
     // transmitir desde que se compartio el enlace.
     state.pendingHex = null;
-    toast("Ese avion ya no aparece en esta zona. Puede haber aterrizado o salido de la cobertura.");
+    toast("Ese avión ya no aparece en esta zona. Puede haber aterrizado o salido de la cobertura.", 6000);
   }
 
   $("countBtn").textContent = String(visiblePlanes().length);
@@ -1845,7 +1876,7 @@ initMap();
 let started = false;
 const start = () => { if (!started) { started = true; refresh(); } };
 map.once("load", start);
-setTimeout(start, 2500);
+setTimeout(start, state.pendingHex ? 300 : 1500);
 
 if (location.protocol === "file:") {
   state.error = "Abriste el archivo directo. Corre npm run dev y entra a http://localhost:3000";

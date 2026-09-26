@@ -40,6 +40,16 @@ Si una fuente responde 429 (demasiadas consultas), descansa un minuto y se sigue
 
 `partial: true` significa que la vista es más grande que los círculos de adsb.lol y adsb.fi: el borde solo lo cubre OpenSky. `count` es cuántos de los aviones del resultado vio cada fuente (uno visto por dos cuenta en las dos).
 
+### OpenSky desde el cliente: `POST /api/flights?bbox=...`
+
+OpenSky corta las conexiones que vienen de nubes (AWS, donde corre Vercel, y también Cloudflare), así que en producción el servidor no puede consultarlo. Desde un teléfono sí responde. La app le pide a OpenSky la caja visible (`/api/states/all?...&extended=1`, con la cuenta del usuario si la puso en Ajustes) y manda la respuesta **tal cual**:
+
+```json
+{ "opensky": { "time": 1790389117, "states": [ ["e8043d", "LXP204  ", "Chile", ...], ... ] } }
+```
+
+El servidor la normaliza, la funde con adsb.lol / adsb.fi y la clasifica con las mismas reglas (el cliente no interpreta nada). La respuesta es la misma que el `GET`, sin caché de CDN. La web no puede hacer esto: OpenSky solo acepta llamadas del navegador desde su propio sitio.
+
 ### Un avión
 
 | Campo | Tipo | |

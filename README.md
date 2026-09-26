@@ -72,6 +72,12 @@ node --env-file=.env scripts/dev.mjs
 
 ## Despliegue en Vercel
 
+**Publicado en https://radar-vuelos-alfam16.vercel.app** (proyecto `radar-vuelos` del equipo `alfam16`). Se actualiza con `npx vercel deploy --prod` desde esta carpeta; `.vercelignore` evita subir el `.env`.
+
+- La protección de despliegues de Vercel está **desactivada** en este proyecto (`vercel project protection disable radar-vuelos --sso`): si no, cada enlace pide iniciar sesión en Vercel y los `/vuelo/<hex>` compartidos no abren.
+- **OpenSky no responde desde Vercel** ("fetch failed"): bloquea conexiones desde nubes como AWS. En producción los vuelos salen de adsb.lol y adsb.fi; OpenSky solo suma en local. Si hiciera falta, se resuelve con un intermediario fuera de AWS.
+
+
 1. Importar el repo en Vercel. No necesita build: son archivos estáticos y funciones en `api/`.
 2. (Opcional) Cargar `OPENSKY_CLIENT_ID` y `OPENSKY_CLIENT_SECRET` en *Settings → Environment Variables*.
 

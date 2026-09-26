@@ -922,7 +922,9 @@ async function refresh() {
     state.error = data.sources.every((s) => !s.ok) ? "Ninguna fuente respondio. Reintento en unos segundos." : null;
   } catch (err) {
     if (err.name === "AbortError") return;
-    state.error = navigator.onLine === false ? "Sin conexion. Reintento cuando vuelva la red." : "No se pudo actualizar. Reintento en unos segundos.";
+    state.error = location.protocol === "file:"
+      ? "Abriste el archivo directo. Corre npm run dev y entra a http://localhost:3000"
+      : navigator.onLine === false ? "Sin conexion. Reintento cuando vuelva la red." : "No se pudo actualizar. Reintento en unos segundos.";
     console.warn("[vuelos]", err);
   } finally {
     if (inflight === ctrl) inflight = null;
@@ -1776,7 +1778,17 @@ $("legendTicks").innerHTML = `<span></span>` + ALT_STEPS.map((s) => `<span>${s.t
 applyTheme(state.themePref);
 renderKinds();
 initMap();
-map.once("load", refresh);
+// Los vuelos NO esperan al mapa base: si los mosaicos de CARTO tardan o los
+// bloquea una extension, igual se piden. El primero que llegue arranca.
+let started = false;
+const start = () => { if (!started) { started = true; refresh(); } };
+map.once("load", start);
+setTimeout(start, 2500);
+
+if (location.protocol === "file:") {
+  state.error = "Abriste el archivo directo. Corre npm run dev y entra a http://localhost:3000";
+  renderStatus();
+}
 setInterval(tick, TICK_MS);
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
